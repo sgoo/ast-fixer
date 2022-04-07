@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "start": "jscodeshift -t ./index.js"
+  },
+  "main": "index",
+  "dependencies": {
+    "jscodeshift": "^0.13.1"
+  }
+}

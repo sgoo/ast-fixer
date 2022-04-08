@@ -6,8 +6,18 @@ Not sure what the consequences of a change that big would be...
 
 # Running
 
-Copy ast.orig.js to ast.js and then run the transform with npm.
+## Fix terser
+
+If terser is cloned into `../terser` you can run this set of commands:
 
 ```
-cp ast.orig.js ast.js && npm start --  -t ./ast-fixer.js ./ast.js
+npm start -- -t ./ast-fixer.js ../terser/lib/ast.js
+npm start -- -t ./mozilla-ast-fixer.js ../terser/lib/mozilla-ast.js
+npm start -- -t ./equivalent-to-fixer.js ../terser/lib/equivalent-to.js
 ```
+
+After that has run it all he eval statements will be removed from runtime, but the output needs some changes.
+
+* In `ast.js` the `DEFNODE` method needs to be tweaked a bit, to fit the new way its called.
+* In `mozilla-ast.js` the `map` method can be removed.
+* In `equivalent-ti.js` the `mkshallow` method can be removed.

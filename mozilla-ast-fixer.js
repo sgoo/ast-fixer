@@ -76,8 +76,11 @@ module.exports = function(fileInfo, api) {
         ));
         mozToMeProperties.push(mozToMeProp);
 
+        // Some have no props and don't need `M`
+        const args = toObjectProperties.length > 1 ? [j.identifier('M')] : [];
+
         const defToMoz = j.callExpression(j.identifier('def_to_moz'), [j.identifier(mytype.name),
-            j.functionExpression(j.identifier(`To_Moz_${moztype.value}`), [j.identifier('M')], j.blockStatement([
+            j.functionExpression(j.identifier(`To_Moz_${moztype.value}`), args, j.blockStatement([
                 j.returnStatement(j.objectExpression(toObjectProperties))
             ]))]);
 

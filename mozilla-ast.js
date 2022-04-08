@@ -941,7 +941,7 @@ import { is_basic_identifier_string } from "./parse.js";
         });
     };
 
-    def_to_moz(AST_EmptyStatement, function To_Moz_EmptyStatement(M) {
+    def_to_moz(AST_EmptyStatement, function To_Moz_EmptyStatement() {
         return {
             type: "EmptyStatement"
         };
@@ -1058,7 +1058,7 @@ import { is_basic_identifier_string } from "./parse.js";
             delegate: M.is_star
         };
     });
-    def_to_moz(AST_Debugger, function To_Moz_DebuggerStatement(M) {
+    def_to_moz(AST_Debugger, function To_Moz_DebuggerStatement() {
         return {
             type: "DebuggerStatement"
         };
@@ -1078,12 +1078,12 @@ import { is_basic_identifier_string } from "./parse.js";
         };
     });
 
-    def_to_moz(AST_This, function To_Moz_ThisExpression(M) {
+    def_to_moz(AST_This, function To_Moz_ThisExpression() {
         return {
             type: "ThisExpression"
         };
     });
-    def_to_moz(AST_Super, function To_Moz_Super(M) {
+    def_to_moz(AST_Super, function To_Moz_Super() {
         return {
             type: "Super"
         };

@@ -48,40 +48,6 @@ import {
 } from "./utils/index.js";
 import { parse } from "./parse.js";
 
-function DEFNODE(type, props, ctor, methods, base = AST_Node) {
-    if (!props) props = [];
-    else props = props.split(/\s+/);
-    var self_props = props;
-    if (base && base.PROPS)
-        props = props.concat(base.PROPS);
-    const proto = base && Object.create(base.prototype);
-    if (proto) {
-        ctor.prototype = proto;
-        ctor.BASE = base;
-    }
-    if (base) base.SUBCLASSES.push(ctor);
-    ctor.prototype.CTOR = ctor;
-    ctor.prototype.constructor = ctor;
-    ctor.PROPS = props || null;
-    ctor.SELF_PROPS = self_props;
-    ctor.SUBCLASSES = [];
-    if (type) {
-        ctor.prototype.TYPE = ctor.TYPE = type;
-    }
-    let i;
-    if (methods) for (i in methods) if (HOP(methods, i)) {
-        if (i[0] === "$") {
-            ctor[i.substr(1)] = methods[i];
-        } else {
-            ctor.prototype[i] = methods[i];
-        }
-    }
-    ctor.DEFMETHOD = function(name, method) {
-        this.prototype[name] = method;
-    };
-    return ctor;
-}
-
 const has_tok_flag = (tok, flag) => Boolean(tok.flags & flag);
 const set_tok_flag = (tok, flag, truth) => {
     if (truth) {
@@ -131,15 +97,27 @@ class AST_Token {
     }
 }
 
-var AST_Node = DEFNODE("Node", "start end", function AST_Node(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+class AST_Node {
+    static TYPE = "Node";
+    TYPE = "Node";
+    CTOR = AST_Node;
+    static documentation = "Base class of all AST nodes";
+
+    static propdoc = {
+        start: "[AST_Token] The first token of this node",
+        end: "[AST_Token] The last token of this node"
+    };
+
+    constructor(props) {
+        this.flags = 0;
+
+        if (props) {
+            this.start = props.start;
+            this.end = props.end;
+        }
     }
 
-    this.flags = 0;
-}, {
-    _clone: function(deep) {
+    _clone(deep) {
         if (deep) {
             var self = this.clone();
             return self.transform(new TreeTransformer(function(node) {
@@ -149,87 +127,98 @@ var AST_Node = DEFNODE("Node", "start end", function AST_Node(props) {
             }));
         }
         return new this.CTOR(this);
-    },
-    clone: function(deep) {
+    }
+
+    clone(deep) {
         return this._clone(deep);
-    },
-    $documentation: "Base class of all AST nodes",
-    $propdoc: {
-        start: "[AST_Token] The first token of this node",
-        end: "[AST_Token] The last token of this node"
-    },
-    _walk: function(visitor) {
+    }
+
+    _walk(visitor) {
         return visitor._visit(this);
-    },
-    walk: function(visitor) {
+    }
+
+    walk(visitor) {
         return this._walk(visitor); // not sure the indirection will be any help
-    },
-    _children_backwards: () => {}
-}, null);
-
-/* -----[ statements ]----- */
-
-var AST_Statement = DEFNODE("Statement", null, function AST_Statement(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class of all statements",
-});
+    _children_backwards() {}
 
-var AST_Debugger = DEFNODE("Debugger", null, function AST_Debugger(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    static DEFMETHOD(name, method) {
+        this.prototype[name] = method;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Represents a debugger statement",
-}, AST_Statement);
+class AST_Statement extends AST_Node {
+    static TYPE = "Statement";
+    TYPE = "Statement";
+    CTOR = AST_Statement;
+    static documentation = "Base class of all statements";
 
-var AST_Directive = DEFNODE("Directive", "value quote", function AST_Directive(props) {
-    if (props) {
-        this.value = props.value;
-        this.quote = props.quote;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Represents a directive, like \"use strict\";",
-    $propdoc: {
+class AST_Debugger extends AST_Statement {
+    static TYPE = "Debugger";
+    TYPE = "Debugger";
+    CTOR = AST_Debugger;
+    static documentation = "Represents a debugger statement";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_Directive extends AST_Statement {
+    static TYPE = "Directive";
+    TYPE = "Directive";
+    CTOR = AST_Directive;
+    static documentation = "Represents a directive, like \"use strict\";";
+
+    static propdoc = {
         value: "[string] The value of this directive as a plain string (it's not an AST_String!)",
         quote: "[string] the original quote character"
-    },
-}, AST_Statement);
+    };
 
-var AST_SimpleStatement = DEFNODE("SimpleStatement", "body", function AST_SimpleStatement(props) {
-    if (props) {
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.value = props.value;
+            this.quote = props.quote;
+        }
+    }
+}
+
+class AST_SimpleStatement extends AST_Statement {
+    static TYPE = "SimpleStatement";
+    TYPE = "SimpleStatement";
+    CTOR = AST_SimpleStatement;
+    static documentation = "A statement consisting of an expression, i.e. a = 1 + 2";
+
+    static propdoc = {
+        body: "[AST_Node] an expression node (should not be instanceof AST_Statement)"
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.body = props.body;
+        }
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A statement consisting of an expression, i.e. a = 1 + 2",
-    $propdoc: {
-        body: "[AST_Node] an expression node (should not be instanceof AST_Statement)"
-    },
-    _walk: function(visitor) {
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.body._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.body);
     }
-}, AST_Statement);
+}
 
 function walk_body(node, visitor) {
     const body = node.body;
@@ -246,97 +235,112 @@ function clone_block_scope(deep) {
     return clone;
 }
 
-var AST_Block = DEFNODE("Block", "body block_scope", function AST_Block(props) {
-    if (props) {
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
-    }
+class AST_Block extends AST_Statement {
+    static TYPE = "Block";
+    TYPE = "Block";
+    CTOR = AST_Block;
+    static documentation = "A body of statements (usually braced)";
 
-    this.flags = 0;
-}, {
-    $documentation: "A body of statements (usually braced)",
-    $propdoc: {
+    static propdoc = {
         body: "[AST_Statement*] an array of statements",
         block_scope: "[AST_Scope] the block scope"
-    },
-    _walk: function(visitor) {
+    };
+
+    clone = clone_block_scope;
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.body = props.body;
+            this.block_scope = props.block_scope;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             walk_body(this, visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.body.length;
         while (i--) push(this.body[i]);
-    },
-    clone: clone_block_scope
-}, AST_Statement);
-
-var AST_BlockStatement = DEFNODE("BlockStatement", null, function AST_BlockStatement(props) {
-    if (props) {
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A block statement",
-}, AST_Block);
+class AST_BlockStatement extends AST_Block {
+    static TYPE = "BlockStatement";
+    TYPE = "BlockStatement";
+    CTOR = AST_BlockStatement;
+    static documentation = "A block statement";
 
-var AST_EmptyStatement = DEFNODE("EmptyStatement", null, function AST_EmptyStatement(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "The empty statement (empty block or simply a semicolon)"
-}, AST_Statement);
+class AST_EmptyStatement extends AST_Statement {
+    static TYPE = "EmptyStatement";
+    TYPE = "EmptyStatement";
+    CTOR = AST_EmptyStatement;
+    static documentation = "The empty statement (empty block or simply a semicolon)";
 
-var AST_StatementWithBody = DEFNODE("StatementWithBody", "body", function AST_StatementWithBody(props) {
-    if (props) {
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for all statements that contain one nested body: `For`, `ForIn`, `Do`, `While`, `With`",
-    $propdoc: {
+class AST_StatementWithBody extends AST_Statement {
+    static TYPE = "StatementWithBody";
+    TYPE = "StatementWithBody";
+    CTOR = AST_StatementWithBody;
+    static documentation = "Base class for all statements that contain one nested body: `For`, `ForIn`, `Do`, `While`, `With`";
+
+    static propdoc = {
         body: "[AST_Statement] the body; this should always be present, even if it's an AST_EmptyStatement"
-    }
-}, AST_Statement);
+    };
 
-var AST_LabeledStatement = DEFNODE("LabeledStatement", "label", function AST_LabeledStatement(props) {
-    if (props) {
-        this.label = props.label;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
-    }
+    constructor(props) {
+        super(props);
 
-    this.flags = 0;
-}, {
-    $documentation: "Statement with a label",
-    $propdoc: {
+        if (props) {
+            this.body = props.body;
+        }
+    }
+}
+
+class AST_LabeledStatement extends AST_StatementWithBody {
+    static TYPE = "LabeledStatement";
+    TYPE = "LabeledStatement";
+    CTOR = AST_LabeledStatement;
+    static documentation = "Statement with a label";
+
+    static propdoc = {
         label: "[AST_Label] a label definition"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.label = props.label;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.label._walk(visitor);
             this.body._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.body);
         push(this.label);
-    },
-    clone: function(deep) {
+    }
+
+    clone(deep) {
         var node = this._clone(deep);
         if (deep) {
             var label = node.label;
@@ -351,210 +355,232 @@ var AST_LabeledStatement = DEFNODE("LabeledStatement", "label", function AST_Lab
         }
         return node;
     }
-}, AST_StatementWithBody);
+}
 
-var AST_IterationStatement = DEFNODE(
-    "IterationStatement",
-    "block_scope",
-    function AST_IterationStatement(props) {
+class AST_IterationStatement extends AST_StatementWithBody {
+    static TYPE = "IterationStatement";
+    TYPE = "IterationStatement";
+    CTOR = AST_IterationStatement;
+    static documentation = "Internal class.  All loops inherit from it.";
+
+    static propdoc = {
+        block_scope: "[AST_Scope] the block scope for this iteration statement."
+    };
+
+    clone = clone_block_scope;
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.block_scope = props.block_scope;
-            this.body = props.body;
-            this.start = props.start;
-            this.end = props.end;
         }
-
-        this.flags = 0;
-    },
-    {
-        $documentation: "Internal class.  All loops inherit from it.",
-        $propdoc: {
-            block_scope: "[AST_Scope] the block scope for this iteration statement."
-        },
-        clone: clone_block_scope
-    },
-    AST_StatementWithBody
-);
-
-var AST_DWLoop = DEFNODE("DWLoop", "condition", function AST_DWLoop(props) {
-    if (props) {
-        this.condition = props.condition;
-        this.block_scope = props.block_scope;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for do/while statements",
-    $propdoc: {
+class AST_DWLoop extends AST_IterationStatement {
+    static TYPE = "DWLoop";
+    TYPE = "DWLoop";
+    CTOR = AST_DWLoop;
+    static documentation = "Base class for do/while statements";
+
+    static propdoc = {
         condition: "[AST_Node] the loop condition.  Should not be instanceof AST_Statement"
-    }
-}, AST_IterationStatement);
+    };
 
-var AST_Do = DEFNODE("Do", null, function AST_Do(props) {
-    if (props) {
-        this.condition = props.condition;
-        this.block_scope = props.block_scope;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.condition = props.condition;
+        }
+    }
+}
+
+class AST_Do extends AST_DWLoop {
+    static TYPE = "Do";
+    TYPE = "Do";
+    CTOR = AST_Do;
+    static documentation = "A `do` statement";
+
+    constructor(props) {
+        super(props);
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A `do` statement",
-    _walk: function(visitor) {
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.body._walk(visitor);
             this.condition._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.condition);
         push(this.body);
     }
-}, AST_DWLoop);
+}
 
-var AST_While = DEFNODE("While", null, function AST_While(props) {
-    if (props) {
-        this.condition = props.condition;
-        this.block_scope = props.block_scope;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
+class AST_While extends AST_DWLoop {
+    static TYPE = "While";
+    TYPE = "While";
+    CTOR = AST_While;
+    static documentation = "A `while` statement";
+
+    constructor(props) {
+        super(props);
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A `while` statement",
-    _walk: function(visitor) {
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.condition._walk(visitor);
             this.body._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.body);
         push(this.condition);
-    },
-}, AST_DWLoop);
-
-var AST_For = DEFNODE("For", "init condition step", function AST_For(props) {
-    if (props) {
-        this.init = props.init;
-        this.condition = props.condition;
-        this.step = props.step;
-        this.block_scope = props.block_scope;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `for` statement",
-    $propdoc: {
+class AST_For extends AST_IterationStatement {
+    static TYPE = "For";
+    TYPE = "For";
+    CTOR = AST_For;
+    static documentation = "A `for` statement";
+
+    static propdoc = {
         init: "[AST_Node?] the `for` initialization code, or null if empty",
         condition: "[AST_Node?] the `for` termination clause, or null if empty",
         step: "[AST_Node?] the `for` update clause, or null if empty"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.init = props.init;
+            this.condition = props.condition;
+            this.step = props.step;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             if (this.init) this.init._walk(visitor);
             if (this.condition) this.condition._walk(visitor);
             if (this.step) this.step._walk(visitor);
             this.body._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.body);
         if (this.step) push(this.step);
         if (this.condition) push(this.condition);
         if (this.init) push(this.init);
-    },
-}, AST_IterationStatement);
-
-var AST_ForIn = DEFNODE("ForIn", "init object", function AST_ForIn(props) {
-    if (props) {
-        this.init = props.init;
-        this.object = props.object;
-        this.block_scope = props.block_scope;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `for ... in` statement",
-    $propdoc: {
+class AST_ForIn extends AST_IterationStatement {
+    static TYPE = "ForIn";
+    TYPE = "ForIn";
+    CTOR = AST_ForIn;
+    static documentation = "A `for ... in` statement";
+
+    static propdoc = {
         init: "[AST_Node] the `for/in` initialization code",
         object: "[AST_Node] the object that we're looping through"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.init = props.init;
+            this.object = props.object;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.init._walk(visitor);
             this.object._walk(visitor);
             this.body._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.body);
         if (this.object) push(this.object);
         if (this.init) push(this.init);
-    },
-}, AST_IterationStatement);
-
-var AST_ForOf = DEFNODE("ForOf", "await", function AST_ForOf(props) {
-    if (props) {
-        this.await = props.await;
-        this.init = props.init;
-        this.object = props.object;
-        this.block_scope = props.block_scope;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `for ... of` statement",
-}, AST_ForIn);
+class AST_ForOf extends AST_ForIn {
+    static TYPE = "ForOf";
+    TYPE = "ForOf";
+    CTOR = AST_ForOf;
+    static documentation = "A `for ... of` statement";
 
-var AST_With = DEFNODE("With", "expression", function AST_With(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.await = props.await;
+        }
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `with` statement",
-    $propdoc: {
+class AST_With extends AST_StatementWithBody {
+    static TYPE = "With";
+    TYPE = "With";
+    CTOR = AST_With;
+    static documentation = "A `with` statement";
+
+    static propdoc = {
         expression: "[AST_Node] the `with` expression"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.expression = props.expression;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
             this.body._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.body);
         push(this.expression);
-    },
-}, AST_StatementWithBody);
+    }
+}
 
-/* -----[ scope and functions ]----- */
+class AST_Scope extends AST_Block {
+    static TYPE = "Scope";
+    TYPE = "Scope";
+    CTOR = AST_Scope;
+    static documentation = "Base class for all statements introducing a lexical scope";
 
-var AST_Scope = DEFNODE(
-    "Scope",
-    "variables functions uses_with uses_eval parent_scope enclosed cname",
-    function AST_Scope(props) {
+    static propdoc = {
+        variables: "[Map/S] a map of name -> SymbolDef for all variables/functions defined in this scope",
+        uses_with: "[boolean/S] tells whether this scope uses the `with` statement",
+        uses_eval: "[boolean/S] tells whether this scope contains a direct call to the global `eval`",
+        parent_scope: "[AST_Scope?/S] link to the parent scope",
+        enclosed: "[SymbolDef*/S] a list of all symbol definitions that are accessed from this scope or any subscopes",
+        cname: "[integer/S] current index for mangling variables (used internally by the mangler)",
+    };
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.variables = props.variables;
             this.functions = props.functions;
@@ -563,75 +589,56 @@ var AST_Scope = DEFNODE(
             this.parent_scope = props.parent_scope;
             this.enclosed = props.enclosed;
             this.cname = props.cname;
-            this.body = props.body;
-            this.block_scope = props.block_scope;
-            this.start = props.start;
-            this.end = props.end;
         }
-
-        this.flags = 0;
-    },
-    {
-        $documentation: "Base class for all statements introducing a lexical scope",
-        $propdoc: {
-            variables: "[Map/S] a map of name -> SymbolDef for all variables/functions defined in this scope",
-            uses_with: "[boolean/S] tells whether this scope uses the `with` statement",
-            uses_eval: "[boolean/S] tells whether this scope contains a direct call to the global `eval`",
-            parent_scope: "[AST_Scope?/S] link to the parent scope",
-            enclosed: "[SymbolDef*/S] a list of all symbol definitions that are accessed from this scope or any subscopes",
-            cname: "[integer/S] current index for mangling variables (used internally by the mangler)",
-        },
-        get_defun_scope: function() {
-            var self = this;
-            while (self.is_block_scope()) {
-                self = self.parent_scope;
-            }
-            return self;
-        },
-        clone: function(deep, toplevel) {
-            var node = this._clone(deep);
-            if (deep && this.variables && toplevel && !this._block_scope) {
-                node.figure_out_scope({}, {
-                    toplevel: toplevel,
-                    parent_scope: this.parent_scope
-                });
-            } else {
-                if (this.variables) node.variables = new Map(this.variables);
-                if (this.enclosed) node.enclosed = this.enclosed.slice();
-                if (this._block_scope) node._block_scope = this._block_scope;
-            }
-            return node;
-        },
-        pinned: function() {
-            return this.uses_eval || this.uses_with;
-        }
-    },
-    AST_Block
-);
-
-var AST_Toplevel = DEFNODE("Toplevel", "globals", function AST_Toplevel(props) {
-    if (props) {
-        this.globals = props.globals;
-        this.variables = props.variables;
-        this.functions = props.functions;
-        this.uses_with = props.uses_with;
-        this.uses_eval = props.uses_eval;
-        this.parent_scope = props.parent_scope;
-        this.enclosed = props.enclosed;
-        this.cname = props.cname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "The toplevel scope",
-    $propdoc: {
+    get_defun_scope() {
+        var self = this;
+        while (self.is_block_scope()) {
+            self = self.parent_scope;
+        }
+        return self;
+    }
+
+    clone(deep, toplevel) {
+        var node = this._clone(deep);
+        if (deep && this.variables && toplevel && !this._block_scope) {
+            node.figure_out_scope({}, {
+                toplevel: toplevel,
+                parent_scope: this.parent_scope
+            });
+        } else {
+            if (this.variables) node.variables = new Map(this.variables);
+            if (this.enclosed) node.enclosed = this.enclosed.slice();
+            if (this._block_scope) node._block_scope = this._block_scope;
+        }
+        return node;
+    }
+
+    pinned() {
+        return this.uses_eval || this.uses_with;
+    }
+}
+
+class AST_Toplevel extends AST_Scope {
+    static TYPE = "Toplevel";
+    TYPE = "Toplevel";
+    CTOR = AST_Toplevel;
+    static documentation = "The toplevel scope";
+
+    static propdoc = {
         globals: "[Map/S] a map of name -> SymbolDef for all undeclared names",
-    },
-    wrap_commonjs: function(name) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.globals = props.globals;
+        }
+    }
+
+    wrap_commonjs(name) {
         var body = this.body;
         var wrapped_tl = "(function(exports){'$ORIG';})(typeof " + name + "=='undefined'?(" + name + "={}):" + name + ");";
         wrapped_tl = parse(wrapped_tl);
@@ -641,8 +648,9 @@ var AST_Toplevel = DEFNODE("Toplevel", "globals", function AST_Toplevel(props) {
             }
         }));
         return wrapped_tl;
-    },
-    wrap_enclose: function(args_values) {
+    }
+
+    wrap_enclose(args_values) {
         if (typeof args_values != "string") args_values = "";
         var index = args_values.indexOf(":");
         if (index < 0) index = args_values.length;
@@ -659,242 +667,191 @@ var AST_Toplevel = DEFNODE("Toplevel", "globals", function AST_Toplevel(props) {
             }
         }));
     }
-}, AST_Scope);
+}
 
-var AST_Expansion = DEFNODE("Expansion", "expression", function AST_Expansion(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.start = props.start;
-        this.end = props.end;
+class AST_Expansion extends AST_Node {
+    static TYPE = "Expansion";
+    TYPE = "Expansion";
+    CTOR = AST_Expansion;
+    static documentation = "An expandible argument, such as ...rest, a splat, such as [1,2,...all], or an expansion in a variable declaration, such as var [first, ...rest] = list";
+
+    static propdoc = {
+        expression: "[AST_Node] the thing to be expanded"
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.expression = props.expression;
+        }
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "An expandible argument, such as ...rest, a splat, such as [1,2,...all], or an expansion in a variable declaration, such as var [first, ...rest] = list",
-    $propdoc: {
-        expression: "[AST_Node] the thing to be expanded"
-    },
-    _walk: function(visitor) {
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression.walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.expression);
-    },
-});
+    }
+}
 
-var AST_Lambda = DEFNODE(
-    "Lambda",
-    "name argnames uses_arguments is_generator async",
-    function AST_Lambda(props) {
+class AST_Lambda extends AST_Scope {
+    static TYPE = "Lambda";
+    TYPE = "Lambda";
+    CTOR = AST_Lambda;
+    static documentation = "Base class for functions";
+
+    static propdoc = {
+        name: "[AST_SymbolDeclaration?] the name of this function",
+        argnames: "[AST_SymbolFunarg|AST_Destructuring|AST_Expansion|AST_DefaultAssign*] array of function arguments, destructurings, or expanding arguments",
+        uses_arguments: "[boolean/S] tells whether this function accesses the arguments array",
+        is_generator: "[boolean] is this a generator method",
+        async: "[boolean] is this method async",
+    };
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.name = props.name;
             this.argnames = props.argnames;
             this.uses_arguments = props.uses_arguments;
             this.is_generator = props.is_generator;
             this.async = props.async;
-            this.variables = props.variables;
-            this.functions = props.functions;
-            this.uses_with = props.uses_with;
-            this.uses_eval = props.uses_eval;
-            this.parent_scope = props.parent_scope;
-            this.enclosed = props.enclosed;
-            this.cname = props.cname;
-            this.body = props.body;
-            this.block_scope = props.block_scope;
-            this.start = props.start;
-            this.end = props.end;
+        }
+    }
+
+    args_as_names() {
+        var out = [];
+        for (var i = 0; i < this.argnames.length; i++) {
+            if (this.argnames[i] instanceof AST_Destructuring) {
+                out.push(...this.argnames[i].all_symbols());
+            } else {
+                out.push(this.argnames[i]);
+            }
+        }
+        return out;
+    }
+
+    _walk(visitor) {
+        return visitor._visit(this, function() {
+            if (this.name) this.name._walk(visitor);
+            var argnames = this.argnames;
+            for (var i = 0, len = argnames.length; i < len; i++) {
+                argnames[i]._walk(visitor);
+            }
+            walk_body(this, visitor);
+        });
+    }
+
+    _children_backwards(push) {
+        let i = this.body.length;
+        while (i--) push(this.body[i]);
+
+        i = this.argnames.length;
+        while (i--) push(this.argnames[i]);
+
+        if (this.name) push(this.name);
+    }
+
+    is_braceless() {
+        return this.body[0] instanceof AST_Return && this.body[0].value;
+    }
+
+    length_property() {
+        let length = 0;
+
+        for (const arg of this.argnames) {
+            if (arg instanceof AST_SymbolFunarg || arg instanceof AST_Destructuring) {
+                length++;
+            }
         }
 
-        this.flags = 0;
-    },
-    {
-        $documentation: "Base class for functions",
-        $propdoc: {
-            name: "[AST_SymbolDeclaration?] the name of this function",
-            argnames: "[AST_SymbolFunarg|AST_Destructuring|AST_Expansion|AST_DefaultAssign*] array of function arguments, destructurings, or expanding arguments",
-            uses_arguments: "[boolean/S] tells whether this function accesses the arguments array",
-            is_generator: "[boolean] is this a generator method",
-            async: "[boolean] is this method async",
-        },
-        args_as_names: function () {
-            var out = [];
-            for (var i = 0; i < this.argnames.length; i++) {
-                if (this.argnames[i] instanceof AST_Destructuring) {
-                    out.push(...this.argnames[i].all_symbols());
-                } else {
-                    out.push(this.argnames[i]);
-                }
-            }
-            return out;
-        },
-        _walk: function(visitor) {
-            return visitor._visit(this, function() {
-                if (this.name) this.name._walk(visitor);
-                var argnames = this.argnames;
-                for (var i = 0, len = argnames.length; i < len; i++) {
-                    argnames[i]._walk(visitor);
-                }
-                walk_body(this, visitor);
-            });
-        },
-        _children_backwards(push) {
-            let i = this.body.length;
-            while (i--) push(this.body[i]);
-
-            i = this.argnames.length;
-            while (i--) push(this.argnames[i]);
-
-            if (this.name) push(this.name);
-        },
-        is_braceless() {
-            return this.body[0] instanceof AST_Return && this.body[0].value;
-        },
-        // Default args and expansion don't count, so .argnames.length doesn't cut it
-        length_property() {
-            let length = 0;
-
-            for (const arg of this.argnames) {
-                if (arg instanceof AST_SymbolFunarg || arg instanceof AST_Destructuring) {
-                    length++;
-                }
-            }
-
-            return length;
-        }
-    },
-    AST_Scope
-);
-
-var AST_Accessor = DEFNODE("Accessor", null, function AST_Accessor(props) {
-    if (props) {
-        this.name = props.name;
-        this.argnames = props.argnames;
-        this.uses_arguments = props.uses_arguments;
-        this.is_generator = props.is_generator;
-        this.async = props.async;
-        this.variables = props.variables;
-        this.functions = props.functions;
-        this.uses_with = props.uses_with;
-        this.uses_eval = props.uses_eval;
-        this.parent_scope = props.parent_scope;
-        this.enclosed = props.enclosed;
-        this.cname = props.cname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+        return length;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A setter/getter function.  The `name` property is always null."
-}, AST_Lambda);
+class AST_Accessor extends AST_Lambda {
+    static TYPE = "Accessor";
+    TYPE = "Accessor";
+    CTOR = AST_Accessor;
+    static documentation = "A setter/getter function.  The `name` property is always null.";
 
-var AST_Function = DEFNODE("Function", null, function AST_Function(props) {
-    if (props) {
-        this.name = props.name;
-        this.argnames = props.argnames;
-        this.uses_arguments = props.uses_arguments;
-        this.is_generator = props.is_generator;
-        this.async = props.async;
-        this.variables = props.variables;
-        this.functions = props.functions;
-        this.uses_with = props.uses_with;
-        this.uses_eval = props.uses_eval;
-        this.parent_scope = props.parent_scope;
-        this.enclosed = props.enclosed;
-        this.cname = props.cname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A function expression"
-}, AST_Lambda);
+class AST_Function extends AST_Lambda {
+    static TYPE = "Function";
+    TYPE = "Function";
+    CTOR = AST_Function;
+    static documentation = "A function expression";
 
-var AST_Arrow = DEFNODE("Arrow", null, function AST_Arrow(props) {
-    if (props) {
-        this.name = props.name;
-        this.argnames = props.argnames;
-        this.uses_arguments = props.uses_arguments;
-        this.is_generator = props.is_generator;
-        this.async = props.async;
-        this.variables = props.variables;
-        this.functions = props.functions;
-        this.uses_with = props.uses_with;
-        this.uses_eval = props.uses_eval;
-        this.parent_scope = props.parent_scope;
-        this.enclosed = props.enclosed;
-        this.cname = props.cname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "An ES6 Arrow function ((a) => b)"
-}, AST_Lambda);
+class AST_Arrow extends AST_Lambda {
+    static TYPE = "Arrow";
+    TYPE = "Arrow";
+    CTOR = AST_Arrow;
+    static documentation = "An ES6 Arrow function ((a) => b)";
 
-var AST_Defun = DEFNODE("Defun", null, function AST_Defun(props) {
-    if (props) {
-        this.name = props.name;
-        this.argnames = props.argnames;
-        this.uses_arguments = props.uses_arguments;
-        this.is_generator = props.is_generator;
-        this.async = props.async;
-        this.variables = props.variables;
-        this.functions = props.functions;
-        this.uses_with = props.uses_with;
-        this.uses_eval = props.uses_eval;
-        this.parent_scope = props.parent_scope;
-        this.enclosed = props.enclosed;
-        this.cname = props.cname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A function definition"
-}, AST_Lambda);
+class AST_Defun extends AST_Lambda {
+    static TYPE = "Defun";
+    TYPE = "Defun";
+    CTOR = AST_Defun;
+    static documentation = "A function definition";
 
-/* -----[ DESTRUCTURING ]----- */
-var AST_Destructuring = DEFNODE("Destructuring", "names is_array", function AST_Destructuring(props) {
-    if (props) {
-        this.names = props.names;
-        this.is_array = props.is_array;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A destructuring of several names. Used in destructuring assignment and with destructuring function argument names",
-    $propdoc: {
+class AST_Destructuring extends AST_Node {
+    static TYPE = "Destructuring";
+    TYPE = "Destructuring";
+    CTOR = AST_Destructuring;
+    static documentation = "A destructuring of several names. Used in destructuring assignment and with destructuring function argument names";
+
+    static propdoc = {
         "names": "[AST_Node*] Array of properties or elements",
         "is_array": "[Boolean] Whether the destructuring represents an object or array"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.names = props.names;
+            this.is_array = props.is_array;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.names.forEach(function(name) {
                 name._walk(visitor);
             });
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.names.length;
         while (i--) push(this.names[i]);
-    },
-    all_symbols: function() {
+    }
+
+    all_symbols() {
         var out = [];
         this.walk(new TreeWalker(function (node) {
             if (node instanceof AST_Symbol) {
@@ -903,263 +860,295 @@ var AST_Destructuring = DEFNODE("Destructuring", "names is_array", function AST_
         }));
         return out;
     }
-});
+}
 
-var AST_PrefixedTemplateString = DEFNODE(
-    "PrefixedTemplateString",
-    "template_string prefix",
-    function AST_PrefixedTemplateString(props) {
+class AST_PrefixedTemplateString extends AST_Node {
+    static TYPE = "PrefixedTemplateString";
+    TYPE = "PrefixedTemplateString";
+    CTOR = AST_PrefixedTemplateString;
+    static documentation = "A templatestring with a prefix, such as String.raw`foobarbaz`";
+
+    static propdoc = {
+        template_string: "[AST_TemplateString] The template string",
+        prefix: "[AST_Node] The prefix, which will get called."
+    };
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.template_string = props.template_string;
             this.prefix = props.prefix;
-            this.start = props.start;
-            this.end = props.end;
         }
-
-        this.flags = 0;
-    },
-    {
-        $documentation: "A templatestring with a prefix, such as String.raw`foobarbaz`",
-        $propdoc: {
-            template_string: "[AST_TemplateString] The template string",
-            prefix: "[AST_Node] The prefix, which will get called."
-        },
-        _walk: function(visitor) {
-            return visitor._visit(this, function () {
-                this.prefix._walk(visitor);
-                this.template_string._walk(visitor);
-            });
-        },
-        _children_backwards(push) {
-            push(this.template_string);
-            push(this.prefix);
-        },
-    }
-);
-
-var AST_TemplateString = DEFNODE("TemplateString", "segments", function AST_TemplateString(props) {
-    if (props) {
-        this.segments = props.segments;
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A template string literal",
-    $propdoc: {
+    _walk(visitor) {
+        return visitor._visit(this, function () {
+            this.prefix._walk(visitor);
+            this.template_string._walk(visitor);
+        });
+    }
+
+    _children_backwards(push) {
+        push(this.template_string);
+        push(this.prefix);
+    }
+}
+
+class AST_TemplateString extends AST_Node {
+    static TYPE = "TemplateString";
+    TYPE = "TemplateString";
+    CTOR = AST_TemplateString;
+    static documentation = "A template string literal";
+
+    static propdoc = {
         segments: "[AST_Node*] One or more segments, starting with AST_TemplateSegment. AST_Node may follow AST_TemplateSegment, but each AST_Node must be followed by AST_TemplateSegment."
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.segments = props.segments;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.segments.forEach(function(seg) {
                 seg._walk(visitor);
             });
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.segments.length;
         while (i--) push(this.segments[i]);
     }
-});
+}
 
-var AST_TemplateSegment = DEFNODE("TemplateSegment", "value raw", function AST_TemplateSegment(props) {
-    if (props) {
-        this.value = props.value;
-        this.raw = props.raw;
-        this.start = props.start;
-        this.end = props.end;
-    }
+class AST_TemplateSegment extends AST_Node {
+    static TYPE = "TemplateSegment";
+    TYPE = "TemplateSegment";
+    CTOR = AST_TemplateSegment;
+    static documentation = "A segment of a template string literal";
 
-    this.flags = 0;
-}, {
-    $documentation: "A segment of a template string literal",
-    $propdoc: {
+    static propdoc = {
         value: "Content of the segment",
         raw: "Raw source of the segment",
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.value = props.value;
+            this.raw = props.raw;
+        }
     }
-});
+}
 
-/* -----[ JUMPS ]----- */
+class AST_Jump extends AST_Statement {
+    static TYPE = "Jump";
+    TYPE = "Jump";
+    CTOR = AST_Jump;
+    static documentation = "Base class for “jumps” (for now that's `return`, `throw`, `break` and `continue`)";
 
-var AST_Jump = DEFNODE("Jump", null, function AST_Jump(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for “jumps” (for now that's `return`, `throw`, `break` and `continue`)"
-}, AST_Statement);
+class AST_Exit extends AST_Jump {
+    static TYPE = "Exit";
+    TYPE = "Exit";
+    CTOR = AST_Exit;
+    static documentation = "Base class for “exits” (`return` and `throw`)";
 
-var AST_Exit = DEFNODE("Exit", "value", function AST_Exit(props) {
-    if (props) {
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "Base class for “exits” (`return` and `throw`)",
-    $propdoc: {
+    static propdoc = {
         value: "[AST_Node?] the value returned or thrown by this statement; could be null for AST_Return"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.value = props.value;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, this.value && function() {
             this.value._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         if (this.value) push(this.value);
-    },
-}, AST_Jump);
-
-var AST_Return = DEFNODE("Return", null, function AST_Return(props) {
-    if (props) {
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `return` statement"
-}, AST_Exit);
+class AST_Return extends AST_Exit {
+    static TYPE = "Return";
+    TYPE = "Return";
+    CTOR = AST_Return;
+    static documentation = "A `return` statement";
 
-var AST_Throw = DEFNODE("Throw", null, function AST_Throw(props) {
-    if (props) {
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `throw` statement"
-}, AST_Exit);
+class AST_Throw extends AST_Exit {
+    static TYPE = "Throw";
+    TYPE = "Throw";
+    CTOR = AST_Throw;
+    static documentation = "A `throw` statement";
 
-var AST_LoopControl = DEFNODE("LoopControl", "label", function AST_LoopControl(props) {
-    if (props) {
-        this.label = props.label;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for loop control statements (`break` and `continue`)",
-    $propdoc: {
+class AST_LoopControl extends AST_Jump {
+    static TYPE = "LoopControl";
+    TYPE = "LoopControl";
+    CTOR = AST_LoopControl;
+    static documentation = "Base class for loop control statements (`break` and `continue`)";
+
+    static propdoc = {
         label: "[AST_LabelRef?] the label, or null if none",
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.label = props.label;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, this.label && function() {
             this.label._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         if (this.label) push(this.label);
-    },
-}, AST_Jump);
-
-var AST_Break = DEFNODE("Break", null, function AST_Break(props) {
-    if (props) {
-        this.label = props.label;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `break` statement"
-}, AST_LoopControl);
+class AST_Break extends AST_LoopControl {
+    static TYPE = "Break";
+    TYPE = "Break";
+    CTOR = AST_Break;
+    static documentation = "A `break` statement";
 
-var AST_Continue = DEFNODE("Continue", null, function AST_Continue(props) {
-    if (props) {
-        this.label = props.label;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `continue` statement"
-}, AST_LoopControl);
+class AST_Continue extends AST_LoopControl {
+    static TYPE = "Continue";
+    TYPE = "Continue";
+    CTOR = AST_Continue;
+    static documentation = "A `continue` statement";
 
-var AST_Await = DEFNODE("Await", "expression", function AST_Await(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "An `await` statement",
-    $propdoc: {
+class AST_Await extends AST_Node {
+    static TYPE = "Await";
+    TYPE = "Await";
+    CTOR = AST_Await;
+    static documentation = "An `await` statement";
+
+    static propdoc = {
         expression: "[AST_Node] the mandatory expression being awaited",
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.expression = props.expression;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
         });
-    },
-    _children_backwards(push) {
-        push(this.expression);
-    },
-});
-
-var AST_Yield = DEFNODE("Yield", "expression is_star", function AST_Yield(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.is_star = props.is_star;
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A `yield` statement",
-    $propdoc: {
+    _children_backwards(push) {
+        push(this.expression);
+    }
+}
+
+class AST_Yield extends AST_Node {
+    static TYPE = "Yield";
+    TYPE = "Yield";
+    CTOR = AST_Yield;
+    static documentation = "A `yield` statement";
+
+    static propdoc = {
         expression: "[AST_Node?] the value returned or thrown by this statement; could be null (representing undefined) but only when is_star is set to false",
         is_star: "[Boolean] Whether this is a yield or yield* statement"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.expression = props.expression;
+            this.is_star = props.is_star;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, this.expression && function() {
             this.expression._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         if (this.expression) push(this.expression);
     }
-});
+}
 
-/* -----[ IF ]----- */
+class AST_If extends AST_StatementWithBody {
+    static TYPE = "If";
+    TYPE = "If";
+    CTOR = AST_If;
+    static documentation = "A `if` statement";
 
-var AST_If = DEFNODE("If", "condition alternative", function AST_If(props) {
-    if (props) {
-        this.condition = props.condition;
-        this.alternative = props.alternative;
-        this.body = props.body;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "A `if` statement",
-    $propdoc: {
+    static propdoc = {
         condition: "[AST_Node] the `if` condition",
         alternative: "[AST_Statement?] the `else` part, or null if not present"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.condition = props.condition;
+            this.alternative = props.alternative;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.condition._walk(visitor);
             this.body._walk(visitor);
             if (this.alternative) this.alternative._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         if (this.alternative) {
             push(this.alternative);
@@ -1167,348 +1156,382 @@ var AST_If = DEFNODE("If", "condition alternative", function AST_If(props) {
         push(this.body);
         push(this.condition);
     }
-}, AST_StatementWithBody);
+}
 
-/* -----[ SWITCH ]----- */
+class AST_Switch extends AST_Block {
+    static TYPE = "Switch";
+    TYPE = "Switch";
+    CTOR = AST_Switch;
+    static documentation = "A `switch` statement";
 
-var AST_Switch = DEFNODE("Switch", "expression", function AST_Switch(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "A `switch` statement",
-    $propdoc: {
+    static propdoc = {
         expression: "[AST_Node] the `switch` “discriminant”"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.expression = props.expression;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
             walk_body(this, visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.body.length;
         while (i--) push(this.body[i]);
         push(this.expression);
     }
-}, AST_Block);
+}
 
-var AST_SwitchBranch = DEFNODE("SwitchBranch", null, function AST_SwitchBranch(props) {
-    if (props) {
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+class AST_SwitchBranch extends AST_Block {
+    static TYPE = "SwitchBranch";
+    TYPE = "SwitchBranch";
+    CTOR = AST_SwitchBranch;
+    static documentation = "Base class for `switch` branches";
+
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for `switch` branches",
-}, AST_Block);
+class AST_Default extends AST_SwitchBranch {
+    static TYPE = "Default";
+    TYPE = "Default";
+    CTOR = AST_Default;
+    static documentation = "A `default` switch branch";
 
-var AST_Default = DEFNODE("Default", null, function AST_Default(props) {
-    if (props) {
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `default` switch branch",
-}, AST_SwitchBranch);
+class AST_Case extends AST_SwitchBranch {
+    static TYPE = "Case";
+    TYPE = "Case";
+    CTOR = AST_Case;
+    static documentation = "A `case` switch branch";
 
-var AST_Case = DEFNODE("Case", "expression", function AST_Case(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "A `case` switch branch",
-    $propdoc: {
+    static propdoc = {
         expression: "[AST_Node] the `case` expression"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.expression = props.expression;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
             walk_body(this, visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.body.length;
         while (i--) push(this.body[i]);
         push(this.expression);
-    },
-}, AST_SwitchBranch);
-
-/* -----[ EXCEPTIONS ]----- */
-
-var AST_Try = DEFNODE("Try", "bcatch bfinally", function AST_Try(props) {
-    if (props) {
-        this.bcatch = props.bcatch;
-        this.bfinally = props.bfinally;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `try` statement",
-    $propdoc: {
+class AST_Try extends AST_Block {
+    static TYPE = "Try";
+    TYPE = "Try";
+    CTOR = AST_Try;
+    static documentation = "A `try` statement";
+
+    static propdoc = {
         bcatch: "[AST_Catch?] the catch block, or null if not present",
         bfinally: "[AST_Finally?] the finally block, or null if not present"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.bcatch = props.bcatch;
+            this.bfinally = props.bfinally;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             walk_body(this, visitor);
             if (this.bcatch) this.bcatch._walk(visitor);
             if (this.bfinally) this.bfinally._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         if (this.bfinally) push(this.bfinally);
         if (this.bcatch) push(this.bcatch);
         let i = this.body.length;
         while (i--) push(this.body[i]);
-    },
-}, AST_Block);
+    }
+}
 
-var AST_Catch = DEFNODE("Catch", "argname", function AST_Catch(props) {
-    if (props) {
-        this.argname = props.argname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+class AST_Catch extends AST_Block {
+    static TYPE = "Catch";
+    TYPE = "Catch";
+    CTOR = AST_Catch;
+    static documentation = "A `catch` node; only makes sense as part of a `try` statement";
+
+    static propdoc = {
+        argname: "[AST_SymbolCatch|AST_Destructuring|AST_Expansion|AST_DefaultAssign] symbol for the exception"
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.argname = props.argname;
+        }
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A `catch` node; only makes sense as part of a `try` statement",
-    $propdoc: {
-        argname: "[AST_SymbolCatch|AST_Destructuring|AST_Expansion|AST_DefaultAssign] symbol for the exception"
-    },
-    _walk: function(visitor) {
+    _walk(visitor) {
         return visitor._visit(this, function() {
             if (this.argname) this.argname._walk(visitor);
             walk_body(this, visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.body.length;
         while (i--) push(this.body[i]);
         if (this.argname) push(this.argname);
-    },
-}, AST_Block);
-
-var AST_Finally = DEFNODE("Finally", null, function AST_Finally(props) {
-    if (props) {
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `finally` node; only makes sense as part of a `try` statement"
-}, AST_Block);
+class AST_Finally extends AST_Block {
+    static TYPE = "Finally";
+    TYPE = "Finally";
+    CTOR = AST_Finally;
+    static documentation = "A `finally` node; only makes sense as part of a `try` statement";
 
-/* -----[ VAR/CONST ]----- */
-
-var AST_Definitions = DEFNODE("Definitions", "definitions", function AST_Definitions(props) {
-    if (props) {
-        this.definitions = props.definitions;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for `var` or `const` nodes (variable declarations/initializations)",
-    $propdoc: {
+class AST_Definitions extends AST_Statement {
+    static TYPE = "Definitions";
+    TYPE = "Definitions";
+    CTOR = AST_Definitions;
+    static documentation = "Base class for `var` or `const` nodes (variable declarations/initializations)";
+
+    static propdoc = {
         definitions: "[AST_VarDef*] array of variable definitions"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.definitions = props.definitions;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             var definitions = this.definitions;
             for (var i = 0, len = definitions.length; i < len; i++) {
                 definitions[i]._walk(visitor);
             }
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.definitions.length;
         while (i--) push(this.definitions[i]);
-    },
-}, AST_Statement);
-
-var AST_Var = DEFNODE("Var", null, function AST_Var(props) {
-    if (props) {
-        this.definitions = props.definitions;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `var` statement"
-}, AST_Definitions);
+class AST_Var extends AST_Definitions {
+    static TYPE = "Var";
+    TYPE = "Var";
+    CTOR = AST_Var;
+    static documentation = "A `var` statement";
 
-var AST_Let = DEFNODE("Let", null, function AST_Let(props) {
-    if (props) {
-        this.definitions = props.definitions;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `let` statement"
-}, AST_Definitions);
+class AST_Let extends AST_Definitions {
+    static TYPE = "Let";
+    TYPE = "Let";
+    CTOR = AST_Let;
+    static documentation = "A `let` statement";
 
-var AST_Const = DEFNODE("Const", null, function AST_Const(props) {
-    if (props) {
-        this.definitions = props.definitions;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A `const` statement"
-}, AST_Definitions);
+class AST_Const extends AST_Definitions {
+    static TYPE = "Const";
+    TYPE = "Const";
+    CTOR = AST_Const;
+    static documentation = "A `const` statement";
 
-var AST_VarDef = DEFNODE("VarDef", "name value", function AST_VarDef(props) {
-    if (props) {
-        this.name = props.name;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A variable declaration; only appears in a AST_Definitions node",
-    $propdoc: {
+class AST_VarDef extends AST_Node {
+    static TYPE = "VarDef";
+    TYPE = "VarDef";
+    CTOR = AST_VarDef;
+    static documentation = "A variable declaration; only appears in a AST_Definitions node";
+
+    static propdoc = {
         name: "[AST_Destructuring|AST_SymbolConst|AST_SymbolLet|AST_SymbolVar] name of the variable",
         value: "[AST_Node?] initializer, or null of there's no initializer"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.name = props.name;
+            this.value = props.value;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.name._walk(visitor);
             if (this.value) this.value._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         if (this.value) push(this.value);
         push(this.name);
-    },
-});
-
-var AST_NameMapping = DEFNODE("NameMapping", "foreign_name name", function AST_NameMapping(props) {
-    if (props) {
-        this.foreign_name = props.foreign_name;
-        this.name = props.name;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "The part of the export/import statement that declare names from a module.",
-    $propdoc: {
+class AST_NameMapping extends AST_Node {
+    static TYPE = "NameMapping";
+    TYPE = "NameMapping";
+    CTOR = AST_NameMapping;
+    static documentation = "The part of the export/import statement that declare names from a module.";
+
+    static propdoc = {
         foreign_name: "[AST_SymbolExportForeign|AST_SymbolImportForeign] The name being exported/imported (as specified in the module)",
         name: "[AST_SymbolExport|AST_SymbolImport] The name as it is visible to this module."
-    },
-    _walk: function (visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.foreign_name = props.foreign_name;
+            this.name = props.name;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.foreign_name._walk(visitor);
             this.name._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.name);
         push(this.foreign_name);
-    },
-});
+    }
+}
 
-var AST_Import = DEFNODE(
-    "Import",
-    "imported_name imported_names module_name assert_clause",
-    function AST_Import(props) {
+class AST_Import extends AST_Node {
+    static TYPE = "Import";
+    TYPE = "Import";
+    CTOR = AST_Import;
+    static documentation = "An `import` statement";
+
+    static propdoc = {
+        imported_name: "[AST_SymbolImport] The name of the variable holding the module's default export.",
+        imported_names: "[AST_NameMapping*] The names of non-default imported variables",
+        module_name: "[AST_String] String literal describing where this module came from",
+        assert_clause: "[AST_Object?] The import assertion"
+    };
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.imported_name = props.imported_name;
             this.imported_names = props.imported_names;
             this.module_name = props.module_name;
             this.assert_clause = props.assert_clause;
-            this.start = props.start;
-            this.end = props.end;
         }
+    }
 
-        this.flags = 0;
-    },
-    {
-        $documentation: "An `import` statement",
-        $propdoc: {
-            imported_name: "[AST_SymbolImport] The name of the variable holding the module's default export.",
-            imported_names: "[AST_NameMapping*] The names of non-default imported variables",
-            module_name: "[AST_String] String literal describing where this module came from",
-            assert_clause: "[AST_Object?] The import assertion"
-        },
-        _walk: function(visitor) {
-            return visitor._visit(this, function() {
-                if (this.imported_name) {
-                    this.imported_name._walk(visitor);
-                }
-                if (this.imported_names) {
-                    this.imported_names.forEach(function(name_import) {
-                        name_import._walk(visitor);
-                    });
-                }
-                this.module_name._walk(visitor);
-            });
-        },
-        _children_backwards(push) {
-            push(this.module_name);
-            if (this.imported_names) {
-                let i = this.imported_names.length;
-                while (i--) push(this.imported_names[i]);
+    _walk(visitor) {
+        return visitor._visit(this, function() {
+            if (this.imported_name) {
+                this.imported_name._walk(visitor);
             }
-            if (this.imported_name) push(this.imported_name);
-        },
-    }
-);
-
-var AST_ImportMeta = DEFNODE("ImportMeta", null, function AST_ImportMeta(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+            if (this.imported_names) {
+                this.imported_names.forEach(function(name_import) {
+                    name_import._walk(visitor);
+                });
+            }
+            this.module_name._walk(visitor);
+        });
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A reference to import.meta",
-});
+    _children_backwards(push) {
+        push(this.module_name);
+        if (this.imported_names) {
+            let i = this.imported_names.length;
+            while (i--) push(this.imported_names[i]);
+        }
+        if (this.imported_name) push(this.imported_name);
+    }
+}
 
-var AST_Export = DEFNODE(
-    "Export",
-    "exported_definition exported_value is_default exported_names module_name assert_clause",
-    function AST_Export(props) {
+class AST_ImportMeta extends AST_Node {
+    static TYPE = "ImportMeta";
+    TYPE = "ImportMeta";
+    CTOR = AST_ImportMeta;
+    static documentation = "A reference to import.meta";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_Export extends AST_Statement {
+    static TYPE = "Export";
+    TYPE = "Export";
+    CTOR = AST_Export;
+    static documentation = "An `export` statement";
+
+    static propdoc = {
+        exported_definition: "[AST_Defun|AST_Definitions|AST_DefClass?] An exported definition",
+        exported_value: "[AST_Node?] An exported value",
+        exported_names: "[AST_NameMapping*?] List of exported names",
+        module_name: "[AST_String?] Name of the file to load exports from",
+        is_default: "[Boolean] Whether this is the default exported value of this module",
+        assert_clause: "[AST_Object?] The import assertion"
+    };
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.exported_definition = props.exported_definition;
             this.exported_value = props.exported_value;
@@ -1516,673 +1539,701 @@ var AST_Export = DEFNODE(
             this.exported_names = props.exported_names;
             this.module_name = props.module_name;
             this.assert_clause = props.assert_clause;
-            this.start = props.start;
-            this.end = props.end;
         }
+    }
 
-        this.flags = 0;
-    },
-    {
-        $documentation: "An `export` statement",
-        $propdoc: {
-            exported_definition: "[AST_Defun|AST_Definitions|AST_DefClass?] An exported definition",
-            exported_value: "[AST_Node?] An exported value",
-            exported_names: "[AST_NameMapping*?] List of exported names",
-            module_name: "[AST_String?] Name of the file to load exports from",
-            is_default: "[Boolean] Whether this is the default exported value of this module",
-            assert_clause: "[AST_Object?] The import assertion"
-        },
-        _walk: function (visitor) {
-            return visitor._visit(this, function () {
-                if (this.exported_definition) {
-                    this.exported_definition._walk(visitor);
-                }
-                if (this.exported_value) {
-                    this.exported_value._walk(visitor);
-                }
-                if (this.exported_names) {
-                    this.exported_names.forEach(function(name_export) {
-                        name_export._walk(visitor);
-                    });
-                }
-                if (this.module_name) {
-                    this.module_name._walk(visitor);
-                }
-            });
-        },
-        _children_backwards(push) {
-            if (this.module_name) push(this.module_name);
-            if (this.exported_names) {
-                let i = this.exported_names.length;
-                while (i--) push(this.exported_names[i]);
+    _walk(visitor) {
+        return visitor._visit(this, function () {
+            if (this.exported_definition) {
+                this.exported_definition._walk(visitor);
             }
-            if (this.exported_value) push(this.exported_value);
-            if (this.exported_definition) push(this.exported_definition);
+            if (this.exported_value) {
+                this.exported_value._walk(visitor);
+            }
+            if (this.exported_names) {
+                this.exported_names.forEach(function(name_export) {
+                    name_export._walk(visitor);
+                });
+            }
+            if (this.module_name) {
+                this.module_name._walk(visitor);
+            }
+        });
+    }
+
+    _children_backwards(push) {
+        if (this.module_name) push(this.module_name);
+        if (this.exported_names) {
+            let i = this.exported_names.length;
+            while (i--) push(this.exported_names[i]);
         }
-    },
-    AST_Statement
-);
+        if (this.exported_value) push(this.exported_value);
+        if (this.exported_definition) push(this.exported_definition);
+    }
+}
 
-/* -----[ OTHER ]----- */
+class AST_Call extends AST_Node {
+    static TYPE = "Call";
+    TYPE = "Call";
+    CTOR = AST_Call;
+    static documentation = "A function call expression";
 
-var AST_Call = DEFNODE(
-    "Call",
-    "expression args optional _annotations",
-    function AST_Call(props) {
+    static propdoc = {
+        expression: "[AST_Node] expression to invoke as function",
+        args: "[AST_Node*] array of arguments",
+        optional: "[boolean] whether this is an optional call (IE ?.() )",
+        _annotations: "[number] bitfield containing information about the call"
+    };
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.expression = props.expression;
             this.args = props.args;
             this.optional = props.optional;
             this._annotations = props._annotations;
-            this.start = props.start;
-            this.end = props.end;
             this.initialize();
         }
-
-        this.flags = 0;
-    },
-    {
-        $documentation: "A function call expression",
-        $propdoc: {
-            expression: "[AST_Node] expression to invoke as function",
-            args: "[AST_Node*] array of arguments",
-            optional: "[boolean] whether this is an optional call (IE ?.() )",
-            _annotations: "[number] bitfield containing information about the call"
-        },
-        initialize() {
-            if (this._annotations == null) this._annotations = 0;
-        },
-        _walk(visitor) {
-            return visitor._visit(this, function() {
-                var args = this.args;
-                for (var i = 0, len = args.length; i < len; i++) {
-                    args[i]._walk(visitor);
-                }
-                this.expression._walk(visitor);  // TODO why do we need to crawl this last?
-            });
-        },
-        _children_backwards(push) {
-            let i = this.args.length;
-            while (i--) push(this.args[i]);
-            push(this.expression);
-        },
-    }
-);
-
-var AST_New = DEFNODE("New", null, function AST_New(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.args = props.args;
-        this.optional = props.optional;
-        this._annotations = props._annotations;
-        this.start = props.start;
-        this.end = props.end;
-        this.initialize();
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "An object instantiation.  Derives from a function call since it has exactly the same properties"
-}, AST_Call);
-
-var AST_Sequence = DEFNODE("Sequence", "expressions", function AST_Sequence(props) {
-    if (props) {
-        this.expressions = props.expressions;
-        this.start = props.start;
-        this.end = props.end;
+    initialize() {
+        if (this._annotations == null) this._annotations = 0;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A sequence expression (comma-separated expressions)",
-    $propdoc: {
+    _walk(visitor) {
+        return visitor._visit(this, function() {
+            var args = this.args;
+            for (var i = 0, len = args.length; i < len; i++) {
+                args[i]._walk(visitor);
+            }
+            this.expression._walk(visitor);  // TODO why do we need to crawl this last?
+        });
+    }
+
+    _children_backwards(push) {
+        let i = this.args.length;
+        while (i--) push(this.args[i]);
+        push(this.expression);
+    }
+}
+
+class AST_New extends AST_Call {
+    static TYPE = "New";
+    TYPE = "New";
+    CTOR = AST_New;
+    static documentation = "An object instantiation.  Derives from a function call since it has exactly the same properties";
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.initialize();
+        }
+    }
+}
+
+class AST_Sequence extends AST_Node {
+    static TYPE = "Sequence";
+    TYPE = "Sequence";
+    CTOR = AST_Sequence;
+    static documentation = "A sequence expression (comma-separated expressions)";
+
+    static propdoc = {
         expressions: "[AST_Node*] array of expressions (at least two)"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.expressions = props.expressions;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expressions.forEach(function(node) {
                 node._walk(visitor);
             });
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.expressions.length;
         while (i--) push(this.expressions[i]);
-    },
-});
+    }
+}
 
-var AST_PropAccess = DEFNODE(
-    "PropAccess",
-    "expression property optional",
-    function AST_PropAccess(props) {
+class AST_PropAccess extends AST_Node {
+    static TYPE = "PropAccess";
+    TYPE = "PropAccess";
+    CTOR = AST_PropAccess;
+    static documentation = "Base class for property access expressions, i.e. `a.foo` or `a[\"foo\"]`";
+
+    static propdoc = {
+        expression: "[AST_Node] the “container” expression",
+        property: "[AST_Node|string] the property to access.  For AST_Dot & AST_DotHash this is always a plain string, while for AST_Sub it's an arbitrary AST_Node",
+
+        optional: "[boolean] whether this is an optional property access (IE ?.)"
+    };
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.expression = props.expression;
             this.property = props.property;
             this.optional = props.optional;
-            this.start = props.start;
-            this.end = props.end;
-        }
-
-        this.flags = 0;
-    },
-    {
-        $documentation: "Base class for property access expressions, i.e. `a.foo` or `a[\"foo\"]`",
-        $propdoc: {
-            expression: "[AST_Node] the “container” expression",
-            property: "[AST_Node|string] the property to access.  For AST_Dot & AST_DotHash this is always a plain string, while for AST_Sub it's an arbitrary AST_Node",
-
-            optional: "[boolean] whether this is an optional property access (IE ?.)"
         }
     }
-);
+}
 
-var AST_Dot = DEFNODE("Dot", "quote", function AST_Dot(props) {
-    if (props) {
-        this.quote = props.quote;
-        this.expression = props.expression;
-        this.property = props.property;
-        this.optional = props.optional;
-        this.start = props.start;
-        this.end = props.end;
-    }
+class AST_Dot extends AST_PropAccess {
+    static TYPE = "Dot";
+    TYPE = "Dot";
+    CTOR = AST_Dot;
+    static documentation = "A dotted property access expression";
 
-    this.flags = 0;
-}, {
-    $documentation: "A dotted property access expression",
-    $propdoc: {
+    static propdoc = {
         quote: "[string] the original quote character when transformed from AST_Sub",
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.quote = props.quote;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
         });
-    },
-    _children_backwards(push) {
-        push(this.expression);
-    },
-}, AST_PropAccess);
-
-var AST_DotHash = DEFNODE("DotHash", "", function AST_DotHash(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.property = props.property;
-        this.optional = props.optional;
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A dotted property access to a private property",
-    _walk: function(visitor) {
+    _children_backwards(push) {
+        push(this.expression);
+    }
+}
+
+class AST_DotHash extends AST_PropAccess {
+    static TYPE = "DotHash";
+    TYPE = "DotHash";
+    CTOR = AST_DotHash;
+    static documentation = "A dotted property access to a private property";
+
+    constructor(props) {
+        super(props);
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
         });
-    },
-    _children_backwards(push) {
-        push(this.expression);
-    },
-}, AST_PropAccess);
-
-var AST_Sub = DEFNODE("Sub", null, function AST_Sub(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.property = props.property;
-        this.optional = props.optional;
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "Index-style property access, i.e. `a[\"foo\"]`",
-    _walk: function(visitor) {
+    _children_backwards(push) {
+        push(this.expression);
+    }
+}
+
+class AST_Sub extends AST_PropAccess {
+    static TYPE = "Sub";
+    TYPE = "Sub";
+    CTOR = AST_Sub;
+    static documentation = "Index-style property access, i.e. `a[\"foo\"]`";
+
+    constructor(props) {
+        super(props);
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
             this.property._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.property);
         push(this.expression);
-    },
-}, AST_PropAccess);
+    }
+}
 
-var AST_Chain = DEFNODE("Chain", "expression", function AST_Chain(props) {
-    if (props) {
-        this.expression = props.expression;
-        this.start = props.start;
-        this.end = props.end;
+class AST_Chain extends AST_Node {
+    static TYPE = "Chain";
+    TYPE = "Chain";
+    CTOR = AST_Chain;
+    static documentation = "A chain expression like a?.b?.(c)?.[d]";
+
+    static propdoc = {
+        expression: "[AST_Call|AST_Dot|AST_DotHash|AST_Sub] chain element."
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.expression = props.expression;
+        }
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A chain expression like a?.b?.(c)?.[d]",
-    $propdoc: {
-        expression: "[AST_Call|AST_Dot|AST_DotHash|AST_Sub] chain element."
-    },
-    _walk: function (visitor) {
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
         });
-    },
-    _children_backwards(push) {
-        push(this.expression);
-    },
-});
-
-var AST_Unary = DEFNODE("Unary", "operator expression", function AST_Unary(props) {
-    if (props) {
-        this.operator = props.operator;
-        this.expression = props.expression;
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for unary expressions",
-    $propdoc: {
+    _children_backwards(push) {
+        push(this.expression);
+    }
+}
+
+class AST_Unary extends AST_Node {
+    static TYPE = "Unary";
+    TYPE = "Unary";
+    CTOR = AST_Unary;
+    static documentation = "Base class for unary expressions";
+
+    static propdoc = {
         operator: "[string] the operator",
         expression: "[AST_Node] expression that this unary operator applies to"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.operator = props.operator;
+            this.expression = props.expression;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.expression._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.expression);
-    },
-});
-
-var AST_UnaryPrefix = DEFNODE("UnaryPrefix", null, function AST_UnaryPrefix(props) {
-    if (props) {
-        this.operator = props.operator;
-        this.expression = props.expression;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Unary prefix expression, i.e. `typeof i` or `++i`"
-}, AST_Unary);
+class AST_UnaryPrefix extends AST_Unary {
+    static TYPE = "UnaryPrefix";
+    TYPE = "UnaryPrefix";
+    CTOR = AST_UnaryPrefix;
+    static documentation = "Unary prefix expression, i.e. `typeof i` or `++i`";
 
-var AST_UnaryPostfix = DEFNODE("UnaryPostfix", null, function AST_UnaryPostfix(props) {
-    if (props) {
-        this.operator = props.operator;
-        this.expression = props.expression;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Unary postfix expression, i.e. `i++`"
-}, AST_Unary);
+class AST_UnaryPostfix extends AST_Unary {
+    static TYPE = "UnaryPostfix";
+    TYPE = "UnaryPostfix";
+    CTOR = AST_UnaryPostfix;
+    static documentation = "Unary postfix expression, i.e. `i++`";
 
-var AST_Binary = DEFNODE("Binary", "operator left right", function AST_Binary(props) {
-    if (props) {
-        this.operator = props.operator;
-        this.left = props.left;
-        this.right = props.right;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Binary expression, i.e. `a + b`",
-    $propdoc: {
+class AST_Binary extends AST_Node {
+    static TYPE = "Binary";
+    TYPE = "Binary";
+    CTOR = AST_Binary;
+    static documentation = "Binary expression, i.e. `a + b`";
+
+    static propdoc = {
         left: "[AST_Node] left-hand side expression",
         operator: "[string] the operator",
         right: "[AST_Node] right-hand side expression"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.operator = props.operator;
+            this.left = props.left;
+            this.right = props.right;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             this.left._walk(visitor);
             this.right._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.right);
         push(this.left);
-    },
-});
+    }
+}
 
-var AST_Conditional = DEFNODE(
-    "Conditional",
-    "condition consequent alternative",
-    function AST_Conditional(props) {
+class AST_Conditional extends AST_Node {
+    static TYPE = "Conditional";
+    TYPE = "Conditional";
+    CTOR = AST_Conditional;
+    static documentation = "Conditional expression using the ternary operator, i.e. `a ? b : c`";
+
+    static propdoc = {
+        condition: "[AST_Node]",
+        consequent: "[AST_Node]",
+        alternative: "[AST_Node]"
+    };
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.condition = props.condition;
             this.consequent = props.consequent;
             this.alternative = props.alternative;
-            this.start = props.start;
-            this.end = props.end;
         }
-
-        this.flags = 0;
-    },
-    {
-        $documentation: "Conditional expression using the ternary operator, i.e. `a ? b : c`",
-        $propdoc: {
-            condition: "[AST_Node]",
-            consequent: "[AST_Node]",
-            alternative: "[AST_Node]"
-        },
-        _walk: function(visitor) {
-            return visitor._visit(this, function() {
-                this.condition._walk(visitor);
-                this.consequent._walk(visitor);
-                this.alternative._walk(visitor);
-            });
-        },
-        _children_backwards(push) {
-            push(this.alternative);
-            push(this.consequent);
-            push(this.condition);
-        },
-    }
-);
-
-var AST_Assign = DEFNODE("Assign", "logical", function AST_Assign(props) {
-    if (props) {
-        this.logical = props.logical;
-        this.operator = props.operator;
-        this.left = props.left;
-        this.right = props.right;
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "An assignment expression — `a = b + 5`",
-    $propdoc: {
+    _walk(visitor) {
+        return visitor._visit(this, function() {
+            this.condition._walk(visitor);
+            this.consequent._walk(visitor);
+            this.alternative._walk(visitor);
+        });
+    }
+
+    _children_backwards(push) {
+        push(this.alternative);
+        push(this.consequent);
+        push(this.condition);
+    }
+}
+
+class AST_Assign extends AST_Binary {
+    static TYPE = "Assign";
+    TYPE = "Assign";
+    CTOR = AST_Assign;
+    static documentation = "An assignment expression — `a = b + 5`";
+
+    static propdoc = {
         logical: "Whether it's a logical assignment"
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.logical = props.logical;
+        }
     }
-}, AST_Binary);
+}
 
-var AST_DefaultAssign = DEFNODE("DefaultAssign", null, function AST_DefaultAssign(props) {
-    if (props) {
-        this.operator = props.operator;
-        this.left = props.left;
-        this.right = props.right;
-        this.start = props.start;
-        this.end = props.end;
+class AST_DefaultAssign extends AST_Binary {
+    static TYPE = "DefaultAssign";
+    TYPE = "DefaultAssign";
+    CTOR = AST_DefaultAssign;
+    static documentation = "A default assignment expression like in `(a = 3) => a`";
+
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A default assignment expression like in `(a = 3) => a`"
-}, AST_Binary);
+class AST_Array extends AST_Node {
+    static TYPE = "Array";
+    TYPE = "Array";
+    CTOR = AST_Array;
+    static documentation = "An array literal";
 
-/* -----[ LITERALS ]----- */
-
-var AST_Array = DEFNODE("Array", "elements", function AST_Array(props) {
-    if (props) {
-        this.elements = props.elements;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "An array literal",
-    $propdoc: {
+    static propdoc = {
         elements: "[AST_Node*] array of elements"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.elements = props.elements;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             var elements = this.elements;
             for (var i = 0, len = elements.length; i < len; i++) {
                 elements[i]._walk(visitor);
             }
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.elements.length;
         while (i--) push(this.elements[i]);
-    },
-});
+    }
+}
 
-var AST_Object = DEFNODE("Object", "properties", function AST_Object(props) {
-    if (props) {
-        this.properties = props.properties;
-        this.start = props.start;
-        this.end = props.end;
+class AST_Object extends AST_Node {
+    static TYPE = "Object";
+    TYPE = "Object";
+    CTOR = AST_Object;
+    static documentation = "An object literal";
+
+    static propdoc = {
+        properties: "[AST_ObjectProperty*] array of properties"
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.properties = props.properties;
+        }
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "An object literal",
-    $propdoc: {
-        properties: "[AST_ObjectProperty*] array of properties"
-    },
-    _walk: function(visitor) {
+    _walk(visitor) {
         return visitor._visit(this, function() {
             var properties = this.properties;
             for (var i = 0, len = properties.length; i < len; i++) {
                 properties[i]._walk(visitor);
             }
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.properties.length;
         while (i--) push(this.properties[i]);
-    },
-});
-
-var AST_ObjectProperty = DEFNODE("ObjectProperty", "key value", function AST_ObjectProperty(props) {
-    if (props) {
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for literal object properties",
-    $propdoc: {
+class AST_ObjectProperty extends AST_Node {
+    static TYPE = "ObjectProperty";
+    TYPE = "ObjectProperty";
+    CTOR = AST_ObjectProperty;
+    static documentation = "Base class for literal object properties";
+
+    static propdoc = {
         key: "[string|AST_Node] property name. For ObjectKeyVal this is a string. For getters, setters and computed property this is an AST_Node.",
         value: "[AST_Node] property value.  For getters and setters this is an AST_Accessor."
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.key = props.key;
+            this.value = props.value;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             if (this.key instanceof AST_Node)
                 this.key._walk(visitor);
             this.value._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         push(this.value);
         if (this.key instanceof AST_Node) push(this.key);
     }
-});
+}
 
-var AST_ObjectKeyVal = DEFNODE("ObjectKeyVal", "quote", function AST_ObjectKeyVal(props) {
-    if (props) {
-        this.quote = props.quote;
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
+class AST_ObjectKeyVal extends AST_ObjectProperty {
+    static TYPE = "ObjectKeyVal";
+    TYPE = "ObjectKeyVal";
+    CTOR = AST_ObjectKeyVal;
+    static documentation = "A key: value object property";
+
+    static propdoc = {
+        quote: "[string] the original quote character"
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.quote = props.quote;
+        }
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A key: value object property",
-    $propdoc: {
-        quote: "[string] the original quote character"
-    },
     computed_key() {
         return this.key instanceof AST_Node;
     }
-}, AST_ObjectProperty);
+}
 
-var AST_PrivateSetter = DEFNODE("PrivateSetter", "static", function AST_PrivateSetter(props) {
-    if (props) {
-        this.static = props.static;
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
-    }
+class AST_PrivateSetter extends AST_ObjectProperty {
+    static TYPE = "PrivateSetter";
+    TYPE = "PrivateSetter";
+    CTOR = AST_PrivateSetter;
 
-    this.flags = 0;
-}, {
-    $propdoc: {
+    static propdoc = {
         static: "[boolean] whether this is a static private setter"
-    },
-    $documentation: "A private setter property",
+    };
+
+    static documentation = "A private setter property";
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.static = props.static;
+        }
+    }
+
     computed_key() {
         return false;
     }
-}, AST_ObjectProperty);
+}
 
-var AST_PrivateGetter = DEFNODE("PrivateGetter", "static", function AST_PrivateGetter(props) {
-    if (props) {
-        this.static = props.static;
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
-    }
+class AST_PrivateGetter extends AST_ObjectProperty {
+    static TYPE = "PrivateGetter";
+    TYPE = "PrivateGetter";
+    CTOR = AST_PrivateGetter;
 
-    this.flags = 0;
-}, {
-    $propdoc: {
+    static propdoc = {
         static: "[boolean] whether this is a static private getter"
-    },
-    $documentation: "A private getter property",
+    };
+
+    static documentation = "A private getter property";
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.static = props.static;
+        }
+    }
+
     computed_key() {
         return false;
     }
-}, AST_ObjectProperty);
+}
 
-var AST_ObjectSetter = DEFNODE("ObjectSetter", "quote static", function AST_ObjectSetter(props) {
-    if (props) {
-        this.quote = props.quote;
-        this.static = props.static;
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
-    }
+class AST_ObjectSetter extends AST_ObjectProperty {
+    static TYPE = "ObjectSetter";
+    TYPE = "ObjectSetter";
+    CTOR = AST_ObjectSetter;
 
-    this.flags = 0;
-}, {
-    $propdoc: {
+    static propdoc = {
         quote: "[string|undefined] the original quote character, if any",
         static: "[boolean] whether this is a static setter (classes only)"
-    },
-    $documentation: "An object setter property",
+    };
+
+    static documentation = "An object setter property";
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.quote = props.quote;
+            this.static = props.static;
+        }
+    }
+
     computed_key() {
         return !(this.key instanceof AST_SymbolMethod);
     }
-}, AST_ObjectProperty);
+}
 
-var AST_ObjectGetter = DEFNODE("ObjectGetter", "quote static", function AST_ObjectGetter(props) {
-    if (props) {
-        this.quote = props.quote;
-        this.static = props.static;
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
-    }
+class AST_ObjectGetter extends AST_ObjectProperty {
+    static TYPE = "ObjectGetter";
+    TYPE = "ObjectGetter";
+    CTOR = AST_ObjectGetter;
 
-    this.flags = 0;
-}, {
-    $propdoc: {
+    static propdoc = {
         quote: "[string|undefined] the original quote character, if any",
         static: "[boolean] whether this is a static getter (classes only)"
-    },
-    $documentation: "An object getter property",
+    };
+
+    static documentation = "An object getter property";
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.quote = props.quote;
+            this.static = props.static;
+        }
+    }
+
     computed_key() {
         return !(this.key instanceof AST_SymbolMethod);
     }
-}, AST_ObjectProperty);
+}
 
-var AST_ConciseMethod = DEFNODE(
-    "ConciseMethod",
-    "quote static is_generator async",
-    function AST_ConciseMethod(props) {
+class AST_ConciseMethod extends AST_ObjectProperty {
+    static TYPE = "ConciseMethod";
+    TYPE = "ConciseMethod";
+    CTOR = AST_ConciseMethod;
+
+    static propdoc = {
+        quote: "[string|undefined] the original quote character, if any",
+        static: "[boolean] is this method static (classes only)",
+        is_generator: "[boolean] is this a generator method",
+        async: "[boolean] is this method async",
+    };
+
+    static documentation = "An ES6 concise method inside an object or class";
+
+    constructor(props) {
+        super(props);
+
         if (props) {
             this.quote = props.quote;
             this.static = props.static;
             this.is_generator = props.is_generator;
             this.async = props.async;
-            this.key = props.key;
-            this.value = props.value;
-            this.start = props.start;
-            this.end = props.end;
         }
-
-        this.flags = 0;
-    },
-    {
-        $propdoc: {
-            quote: "[string|undefined] the original quote character, if any",
-            static: "[boolean] is this method static (classes only)",
-            is_generator: "[boolean] is this a generator method",
-            async: "[boolean] is this method async",
-        },
-        $documentation: "An ES6 concise method inside an object or class",
-        computed_key() {
-            return !(this.key instanceof AST_SymbolMethod);
-        }
-    },
-    AST_ObjectProperty
-);
-
-var AST_PrivateMethod = DEFNODE("PrivateMethod", "", function AST_PrivateMethod(props) {
-    if (props) {
-        this.quote = props.quote;
-        this.static = props.static;
-        this.is_generator = props.is_generator;
-        this.async = props.async;
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "A private class method inside a class",
-}, AST_ConciseMethod);
-
-var AST_Class = DEFNODE("Class", "name extends properties", function AST_Class(props) {
-    if (props) {
-        this.name = props.name;
-        this.extends = props.extends;
-        this.properties = props.properties;
-        this.variables = props.variables;
-        this.functions = props.functions;
-        this.uses_with = props.uses_with;
-        this.uses_eval = props.uses_eval;
-        this.parent_scope = props.parent_scope;
-        this.enclosed = props.enclosed;
-        this.cname = props.cname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+    computed_key() {
+        return !(this.key instanceof AST_SymbolMethod);
     }
+}
 
-    this.flags = 0;
-}, {
-    $propdoc: {
+class AST_PrivateMethod extends AST_ConciseMethod {
+    static TYPE = "PrivateMethod";
+    TYPE = "PrivateMethod";
+    CTOR = AST_PrivateMethod;
+    static documentation = "A private class method inside a class";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_Class extends AST_Scope {
+    static TYPE = "Class";
+    TYPE = "Class";
+    CTOR = AST_Class;
+
+    static propdoc = {
         name: "[AST_SymbolClass|AST_SymbolDefClass?] optional class name.",
         extends: "[AST_Node]? optional parent class",
         properties: "[AST_ObjectProperty*] array of properties"
-    },
-    $documentation: "An ES6 class",
-    _walk: function(visitor) {
+    };
+
+    static documentation = "An ES6 class";
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.name = props.name;
+            this.extends = props.extends;
+            this.properties = props.properties;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             if (this.name) {
                 this.name._walk(visitor);
@@ -2192,658 +2243,583 @@ var AST_Class = DEFNODE("Class", "name extends properties", function AST_Class(p
             }
             this.properties.forEach((prop) => prop._walk(visitor));
         });
-    },
+    }
+
     _children_backwards(push) {
         let i = this.properties.length;
         while (i--) push(this.properties[i]);
         if (this.extends) push(this.extends);
         if (this.name) push(this.name);
-    },
-}, AST_Scope /* TODO a class might have a scope but it's not a scope */);
-
-var AST_ClassProperty = DEFNODE("ClassProperty", "static quote", function AST_ClassProperty(props) {
-    if (props) {
-        this.static = props.static;
-        this.quote = props.quote;
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A class property",
-    $propdoc: {
+class AST_ClassProperty extends AST_ObjectProperty {
+    static TYPE = "ClassProperty";
+    TYPE = "ClassProperty";
+    CTOR = AST_ClassProperty;
+    static documentation = "A class property";
+
+    static propdoc = {
         static: "[boolean] whether this is a static key",
         quote: "[string] which quote is being used"
-    },
-    _walk: function(visitor) {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.static = props.static;
+            this.quote = props.quote;
+        }
+    }
+
+    _walk(visitor) {
         return visitor._visit(this, function() {
             if (this.key instanceof AST_Node)
                 this.key._walk(visitor);
             if (this.value instanceof AST_Node)
                 this.value._walk(visitor);
         });
-    },
+    }
+
     _children_backwards(push) {
         if (this.value instanceof AST_Node) push(this.value);
         if (this.key instanceof AST_Node) push(this.key);
-    },
+    }
+
     computed_key() {
         return !(this.key instanceof AST_SymbolClassProperty);
     }
-}, AST_ObjectProperty);
+}
 
-var AST_ClassPrivateProperty = DEFNODE("ClassPrivateProperty", "", function AST_ClassPrivateProperty(props) {
-    if (props) {
-        this.static = props.static;
-        this.quote = props.quote;
-        this.key = props.key;
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
+class AST_ClassPrivateProperty extends AST_ClassProperty {
+    static TYPE = "ClassPrivateProperty";
+    TYPE = "ClassPrivateProperty";
+    CTOR = AST_ClassPrivateProperty;
+    static documentation = "A class property for a private property";
+
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A class property for a private property",
-}, AST_ClassProperty);
+class AST_DefClass extends AST_Class {
+    static TYPE = "DefClass";
+    TYPE = "DefClass";
+    CTOR = AST_DefClass;
+    static documentation = "A class definition";
 
-var AST_DefClass = DEFNODE("DefClass", null, function AST_DefClass(props) {
-    if (props) {
-        this.name = props.name;
-        this.extends = props.extends;
-        this.properties = props.properties;
-        this.variables = props.variables;
-        this.functions = props.functions;
-        this.uses_with = props.uses_with;
-        this.uses_eval = props.uses_eval;
-        this.parent_scope = props.parent_scope;
-        this.enclosed = props.enclosed;
-        this.cname = props.cname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A class definition",
-}, AST_Class);
+class AST_ClassExpression extends AST_Class {
+    static TYPE = "ClassExpression";
+    TYPE = "ClassExpression";
+    CTOR = AST_ClassExpression;
+    static documentation = "A class expression.";
 
-var AST_ClassExpression = DEFNODE("ClassExpression", null, function AST_ClassExpression(props) {
-    if (props) {
-        this.name = props.name;
-        this.extends = props.extends;
-        this.properties = props.properties;
-        this.variables = props.variables;
-        this.functions = props.functions;
-        this.uses_with = props.uses_with;
-        this.uses_eval = props.uses_eval;
-        this.parent_scope = props.parent_scope;
-        this.enclosed = props.enclosed;
-        this.cname = props.cname;
-        this.body = props.body;
-        this.block_scope = props.block_scope;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A class expression."
-}, AST_Class);
+class AST_Symbol extends AST_Node {
+    static TYPE = "Symbol";
+    TYPE = "Symbol";
+    CTOR = AST_Symbol;
 
-var AST_Symbol = DEFNODE("Symbol", "scope name thedef", function AST_Symbol(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $propdoc: {
+    static propdoc = {
         name: "[string] name of this symbol",
         scope: "[AST_Scope/S] the current scope (not necessarily the definition scope)",
         thedef: "[SymbolDef/S] the definition of this symbol"
-    },
-    $documentation: "Base class for all symbols"
-});
+    };
 
-var AST_NewTarget = DEFNODE("NewTarget", null, function AST_NewTarget(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
-    }
+    static documentation = "Base class for all symbols";
 
-    this.flags = 0;
-}, {
-    $documentation: "A reference to new.target"
-});
+    constructor(props) {
+        super(props);
 
-var AST_SymbolDeclaration = DEFNODE("SymbolDeclaration", "init", function AST_SymbolDeclaration(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "A declaration symbol (symbol in var/const, function name or argument, symbol in catch)",
-}, AST_Symbol);
-
-var AST_SymbolVar = DEFNODE("SymbolVar", null, function AST_SymbolVar(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "Symbol defining a variable",
-}, AST_SymbolDeclaration);
-
-var AST_SymbolBlockDeclaration = DEFNODE(
-    "SymbolBlockDeclaration",
-    null,
-    function AST_SymbolBlockDeclaration(props) {
         if (props) {
-            this.init = props.init;
             this.scope = props.scope;
             this.name = props.name;
             this.thedef = props.thedef;
-            this.start = props.start;
-            this.end = props.end;
         }
-
-        this.flags = 0;
-    },
-    {
-        $documentation: "Base class for block-scoped declaration symbols"
-    },
-    AST_SymbolDeclaration
-);
-
-var AST_SymbolConst = DEFNODE("SymbolConst", null, function AST_SymbolConst(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A constant declaration"
-}, AST_SymbolBlockDeclaration);
+class AST_NewTarget extends AST_Node {
+    static TYPE = "NewTarget";
+    TYPE = "NewTarget";
+    CTOR = AST_NewTarget;
+    static documentation = "A reference to new.target";
 
-var AST_SymbolLet = DEFNODE("SymbolLet", null, function AST_SymbolLet(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A block-scoped `let` declaration"
-}, AST_SymbolBlockDeclaration);
+class AST_SymbolDeclaration extends AST_Symbol {
+    static TYPE = "SymbolDeclaration";
+    TYPE = "SymbolDeclaration";
+    CTOR = AST_SymbolDeclaration;
+    static documentation = "A declaration symbol (symbol in var/const, function name or argument, symbol in catch)";
 
-var AST_SymbolFunarg = DEFNODE("SymbolFunarg", null, function AST_SymbolFunarg(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.init = props.init;
+        }
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol naming a function argument",
-}, AST_SymbolVar);
+class AST_SymbolVar extends AST_SymbolDeclaration {
+    static TYPE = "SymbolVar";
+    TYPE = "SymbolVar";
+    CTOR = AST_SymbolVar;
+    static documentation = "Symbol defining a variable";
 
-var AST_SymbolDefun = DEFNODE("SymbolDefun", null, function AST_SymbolDefun(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol defining a function",
-}, AST_SymbolDeclaration);
+class AST_SymbolBlockDeclaration extends AST_SymbolDeclaration {
+    static TYPE = "SymbolBlockDeclaration";
+    TYPE = "SymbolBlockDeclaration";
+    CTOR = AST_SymbolBlockDeclaration;
+    static documentation = "Base class for block-scoped declaration symbols";
 
-var AST_SymbolMethod = DEFNODE("SymbolMethod", null, function AST_SymbolMethod(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol in an object defining a method",
-}, AST_Symbol);
+class AST_SymbolConst extends AST_SymbolBlockDeclaration {
+    static TYPE = "SymbolConst";
+    TYPE = "SymbolConst";
+    CTOR = AST_SymbolConst;
+    static documentation = "A constant declaration";
 
-var AST_SymbolClassProperty = DEFNODE("SymbolClassProperty", null, function AST_SymbolClassProperty(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol for a class property",
-}, AST_Symbol);
+class AST_SymbolLet extends AST_SymbolBlockDeclaration {
+    static TYPE = "SymbolLet";
+    TYPE = "SymbolLet";
+    CTOR = AST_SymbolLet;
+    static documentation = "A block-scoped `let` declaration";
 
-var AST_SymbolLambda = DEFNODE("SymbolLambda", null, function AST_SymbolLambda(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol naming a function expression",
-}, AST_SymbolDeclaration);
+class AST_SymbolFunarg extends AST_SymbolVar {
+    static TYPE = "SymbolFunarg";
+    TYPE = "SymbolFunarg";
+    CTOR = AST_SymbolFunarg;
+    static documentation = "Symbol naming a function argument";
 
-var AST_SymbolDefClass = DEFNODE("SymbolDefClass", null, function AST_SymbolDefClass(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol naming a class's name in a class declaration. Lexically scoped to its containing scope, and accessible within the class."
-}, AST_SymbolBlockDeclaration);
+class AST_SymbolDefun extends AST_SymbolDeclaration {
+    static TYPE = "SymbolDefun";
+    TYPE = "SymbolDefun";
+    CTOR = AST_SymbolDefun;
+    static documentation = "Symbol defining a function";
 
-var AST_SymbolClass = DEFNODE("SymbolClass", null, function AST_SymbolClass(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol naming a class's name. Lexically scoped to the class."
-}, AST_SymbolDeclaration);
+class AST_SymbolMethod extends AST_Symbol {
+    static TYPE = "SymbolMethod";
+    TYPE = "SymbolMethod";
+    CTOR = AST_SymbolMethod;
+    static documentation = "Symbol in an object defining a method";
 
-var AST_SymbolCatch = DEFNODE("SymbolCatch", null, function AST_SymbolCatch(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol naming the exception in catch",
-}, AST_SymbolBlockDeclaration);
+class AST_SymbolClassProperty extends AST_Symbol {
+    static TYPE = "SymbolClassProperty";
+    TYPE = "SymbolClassProperty";
+    CTOR = AST_SymbolClassProperty;
+    static documentation = "Symbol for a class property";
 
-var AST_SymbolImport = DEFNODE("SymbolImport", null, function AST_SymbolImport(props) {
-    if (props) {
-        this.init = props.init;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol referring to an imported name",
-}, AST_SymbolBlockDeclaration);
+class AST_SymbolLambda extends AST_SymbolDeclaration {
+    static TYPE = "SymbolLambda";
+    TYPE = "SymbolLambda";
+    CTOR = AST_SymbolLambda;
+    static documentation = "Symbol naming a function expression";
 
-var AST_SymbolImportForeign = DEFNODE("SymbolImportForeign", null, function AST_SymbolImportForeign(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A symbol imported from a module, but it is defined in the other module, and its real name is irrelevant for this module's purposes",
-}, AST_Symbol);
+class AST_SymbolDefClass extends AST_SymbolBlockDeclaration {
+    static TYPE = "SymbolDefClass";
+    TYPE = "SymbolDefClass";
+    CTOR = AST_SymbolDefClass;
+    static documentation = "Symbol naming a class's name in a class declaration. Lexically scoped to its containing scope, and accessible within the class.";
 
-var AST_Label = DEFNODE("Label", "references", function AST_Label(props) {
-    if (props) {
-        this.references = props.references;
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-        this.initialize();
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Symbol naming a label (declaration)",
-    $propdoc: {
+class AST_SymbolClass extends AST_SymbolDeclaration {
+    static TYPE = "SymbolClass";
+    TYPE = "SymbolClass";
+    CTOR = AST_SymbolClass;
+    static documentation = "Symbol naming a class's name. Lexically scoped to the class.";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_SymbolCatch extends AST_SymbolBlockDeclaration {
+    static TYPE = "SymbolCatch";
+    TYPE = "SymbolCatch";
+    CTOR = AST_SymbolCatch;
+    static documentation = "Symbol naming the exception in catch";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_SymbolImport extends AST_SymbolBlockDeclaration {
+    static TYPE = "SymbolImport";
+    TYPE = "SymbolImport";
+    CTOR = AST_SymbolImport;
+    static documentation = "Symbol referring to an imported name";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_SymbolImportForeign extends AST_Symbol {
+    static TYPE = "SymbolImportForeign";
+    TYPE = "SymbolImportForeign";
+    CTOR = AST_SymbolImportForeign;
+    static documentation = "A symbol imported from a module, but it is defined in the other module, and its real name is irrelevant for this module's purposes";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_Label extends AST_Symbol {
+    static TYPE = "Label";
+    TYPE = "Label";
+    CTOR = AST_Label;
+    static documentation = "Symbol naming a label (declaration)";
+
+    static propdoc = {
         references: "[AST_LoopControl*] a list of nodes referring to this label"
-    },
-    initialize: function() {
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.references = props.references;
+            this.initialize();
+        }
+    }
+
+    initialize() {
         this.references = [];
         this.thedef = this;
     }
-}, AST_Symbol);
+}
 
-var AST_SymbolRef = DEFNODE("SymbolRef", null, function AST_SymbolRef(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
+class AST_SymbolRef extends AST_Symbol {
+    static TYPE = "SymbolRef";
+    TYPE = "SymbolRef";
+    CTOR = AST_SymbolRef;
+    static documentation = "Reference to some symbol (not definition/declaration)";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_SymbolExport extends AST_SymbolRef {
+    static TYPE = "SymbolExport";
+    TYPE = "SymbolExport";
+    CTOR = AST_SymbolExport;
+    static documentation = "Symbol referring to a name to export";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_SymbolExportForeign extends AST_Symbol {
+    static TYPE = "SymbolExportForeign";
+    TYPE = "SymbolExportForeign";
+    CTOR = AST_SymbolExportForeign;
+    static documentation = "A symbol exported from this module, but it is used in the other module, and its real name is irrelevant for this module's purposes";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_LabelRef extends AST_Symbol {
+    static TYPE = "LabelRef";
+    TYPE = "LabelRef";
+    CTOR = AST_LabelRef;
+    static documentation = "Reference to a label symbol";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_This extends AST_Symbol {
+    static TYPE = "This";
+    TYPE = "This";
+    CTOR = AST_This;
+    static documentation = "The `this` symbol";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_Super extends AST_This {
+    static TYPE = "Super";
+    TYPE = "Super";
+    CTOR = AST_Super;
+    static documentation = "The `super` symbol";
+
+    constructor(props) {
+        super(props);
+    }
+}
+
+class AST_Constant extends AST_Node {
+    static TYPE = "Constant";
+    TYPE = "Constant";
+    CTOR = AST_Constant;
+    static documentation = "Base class for all constants";
+
+    constructor(props) {
+        super(props);
     }
 
-    this.flags = 0;
-}, {
-    $documentation: "Reference to some symbol (not definition/declaration)",
-}, AST_Symbol);
-
-var AST_SymbolExport = DEFNODE("SymbolExport", null, function AST_SymbolExport(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "Symbol referring to a name to export",
-}, AST_SymbolRef);
-
-var AST_SymbolExportForeign = DEFNODE("SymbolExportForeign", null, function AST_SymbolExportForeign(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "A symbol exported from this module, but it is used in the other module, and its real name is irrelevant for this module's purposes",
-}, AST_Symbol);
-
-var AST_LabelRef = DEFNODE("LabelRef", null, function AST_LabelRef(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "Reference to a label symbol",
-}, AST_Symbol);
-
-var AST_This = DEFNODE("This", null, function AST_This(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "The `this` symbol",
-}, AST_Symbol);
-
-var AST_Super = DEFNODE("Super", null, function AST_Super(props) {
-    if (props) {
-        this.scope = props.scope;
-        this.name = props.name;
-        this.thedef = props.thedef;
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "The `super` symbol",
-}, AST_This);
-
-var AST_Constant = DEFNODE("Constant", null, function AST_Constant(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
-    }
-
-    this.flags = 0;
-}, {
-    $documentation: "Base class for all constants",
-    getValue: function() {
+    getValue() {
         return this.value;
     }
-});
+}
 
-var AST_String = DEFNODE("String", "value quote", function AST_String(props) {
-    if (props) {
-        this.value = props.value;
-        this.quote = props.quote;
-        this.start = props.start;
-        this.end = props.end;
-    }
+class AST_String extends AST_Constant {
+    static TYPE = "String";
+    TYPE = "String";
+    CTOR = AST_String;
+    static documentation = "A string literal";
 
-    this.flags = 0;
-}, {
-    $documentation: "A string literal",
-    $propdoc: {
+    static propdoc = {
         value: "[string] the contents of this string",
         quote: "[string] the original quote character"
-    }
-}, AST_Constant);
+    };
 
-var AST_Number = DEFNODE("Number", "value raw", function AST_Number(props) {
-    if (props) {
-        this.value = props.value;
-        this.raw = props.raw;
-        this.start = props.start;
-        this.end = props.end;
-    }
+    constructor(props) {
+        super(props);
 
-    this.flags = 0;
-}, {
-    $documentation: "A number literal",
-    $propdoc: {
+        if (props) {
+            this.value = props.value;
+            this.quote = props.quote;
+        }
+    }
+}
+
+class AST_Number extends AST_Constant {
+    static TYPE = "Number";
+    TYPE = "Number";
+    CTOR = AST_Number;
+    static documentation = "A number literal";
+
+    static propdoc = {
         value: "[number] the numeric value",
         raw: "[string] numeric value as string"
-    }
-}, AST_Constant);
+    };
 
-var AST_BigInt = DEFNODE("BigInt", "value", function AST_BigInt(props) {
-    if (props) {
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
-    }
+    constructor(props) {
+        super(props);
 
-    this.flags = 0;
-}, {
-    $documentation: "A big int literal",
-    $propdoc: {
+        if (props) {
+            this.value = props.value;
+            this.raw = props.raw;
+        }
+    }
+}
+
+class AST_BigInt extends AST_Constant {
+    static TYPE = "BigInt";
+    TYPE = "BigInt";
+    CTOR = AST_BigInt;
+    static documentation = "A big int literal";
+
+    static propdoc = {
         value: "[string] big int value"
-    }
-}, AST_Constant);
+    };
 
-var AST_RegExp = DEFNODE("RegExp", "value", function AST_RegExp(props) {
-    if (props) {
-        this.value = props.value;
-        this.start = props.start;
-        this.end = props.end;
-    }
+    constructor(props) {
+        super(props);
 
-    this.flags = 0;
-}, {
-    $documentation: "A regexp literal",
-    $propdoc: {
+        if (props) {
+            this.value = props.value;
+        }
+    }
+}
+
+class AST_RegExp extends AST_Constant {
+    static TYPE = "RegExp";
+    TYPE = "RegExp";
+    CTOR = AST_RegExp;
+    static documentation = "A regexp literal";
+
+    static propdoc = {
         value: "[RegExp] the actual regexp",
+    };
+
+    constructor(props) {
+        super(props);
+
+        if (props) {
+            this.value = props.value;
+        }
     }
-}, AST_Constant);
+}
 
-var AST_Atom = DEFNODE("Atom", null, function AST_Atom(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+class AST_Atom extends AST_Constant {
+    static TYPE = "Atom";
+    TYPE = "Atom";
+    CTOR = AST_Atom;
+    static documentation = "Base class for atoms";
+
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for atoms",
-}, AST_Constant);
+class AST_Null extends AST_Atom {
+    static TYPE = "Null";
+    TYPE = "Null";
+    CTOR = AST_Null;
+    static documentation = "The `null` atom";
+    value = null;
 
-var AST_Null = DEFNODE("Null", null, function AST_Null(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "The `null` atom",
-    value: null
-}, AST_Atom);
+class AST_NaN extends AST_Atom {
+    static TYPE = "NaN";
+    TYPE = "NaN";
+    CTOR = AST_NaN;
+    static documentation = "The impossible value";
+    value = 0/0;
 
-var AST_NaN = DEFNODE("NaN", null, function AST_NaN(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "The impossible value",
-    value: 0/0
-}, AST_Atom);
+class AST_Undefined extends AST_Atom {
+    static TYPE = "Undefined";
+    TYPE = "Undefined";
+    CTOR = AST_Undefined;
+    static documentation = "The `undefined` value";
+    value = function() {}();
 
-var AST_Undefined = DEFNODE("Undefined", null, function AST_Undefined(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "The `undefined` value",
-    value: (function() {}())
-}, AST_Atom);
+class AST_Hole extends AST_Atom {
+    static TYPE = "Hole";
+    TYPE = "Hole";
+    CTOR = AST_Hole;
+    static documentation = "A hole in an array";
+    value = function() {}();
 
-var AST_Hole = DEFNODE("Hole", null, function AST_Hole(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "A hole in an array",
-    value: (function() {}())
-}, AST_Atom);
+class AST_Infinity extends AST_Atom {
+    static TYPE = "Infinity";
+    TYPE = "Infinity";
+    CTOR = AST_Infinity;
+    static documentation = "The `Infinity` value";
+    value = 1/0;
 
-var AST_Infinity = DEFNODE("Infinity", null, function AST_Infinity(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "The `Infinity` value",
-    value: 1/0
-}, AST_Atom);
+class AST_Boolean extends AST_Atom {
+    static TYPE = "Boolean";
+    TYPE = "Boolean";
+    CTOR = AST_Boolean;
+    static documentation = "Base class for booleans";
 
-var AST_Boolean = DEFNODE("Boolean", null, function AST_Boolean(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "Base class for booleans",
-}, AST_Atom);
+class AST_False extends AST_Boolean {
+    static TYPE = "False";
+    TYPE = "False";
+    CTOR = AST_False;
+    static documentation = "The `false` atom";
+    value = false;
 
-var AST_False = DEFNODE("False", null, function AST_False(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
+}
 
-    this.flags = 0;
-}, {
-    $documentation: "The `false` atom",
-    value: false
-}, AST_Boolean);
+class AST_True extends AST_Boolean {
+    static TYPE = "True";
+    TYPE = "True";
+    CTOR = AST_True;
+    static documentation = "The `true` atom";
+    value = true;
 
-var AST_True = DEFNODE("True", null, function AST_True(props) {
-    if (props) {
-        this.start = props.start;
-        this.end = props.end;
+    constructor(props) {
+        super(props);
     }
-
-    this.flags = 0;
-}, {
-    $documentation: "The `true` atom",
-    value: true
-}, AST_Boolean);
+}
 
 /* -----[ Walk function ]---- */
 

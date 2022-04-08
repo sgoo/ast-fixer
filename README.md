@@ -9,5 +9,5 @@ Not sure what the consequences of a change that big would be...
 Copy ast.orig.js to ast.js and then run the transform with npm.
 
 ```
-cp ast.orig.js ast.js && npm start -- ./ast.js
+cp ast.orig.js ast.js && npm start --  -t ./ast-fixer.js ./ast.js
 ```

@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "start": "jscodeshift -t ./index.js"
+    "start": "jscodeshift"
   },
   "main": "index",
   "dependencies": {

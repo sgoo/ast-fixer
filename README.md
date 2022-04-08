@@ -11,9 +11,9 @@ Not sure what the consequences of a change that big would be...
 If terser is cloned into `../terser` you can run this set of commands:
 
 ```
-npm start -- -t ./ast-fixer.js ../terser/lib/ast.js
-npm start -- -t ./mozilla-ast-fixer.js ../terser/lib/mozilla-ast.js
-npm start -- -t ./equivalent-to-fixer.js ../terser/lib/equivalent-to.js
+npm start -- -t ./src/ast-fixer.js ../terser/lib/ast.js
+npm start -- -t ./src/mozilla-ast-fixer.js ../terser/lib/mozilla-ast.js
+npm start -- -t ./src/equivalent-to-fixer.js ../terser/lib/equivalent-to.js
 ```
 
 After that has run it all he eval statements will be removed from runtime, but the output needs some changes.
